@@ -1,0 +1,78 @@
+{
+  "playbook": {
+    "title": "Playbook: phishing simulation A–Z",
+    "intro": "This playbook describes an authorized simulation for awareness training and process testing. Always follow the law, internal policies, and have the organization’s consent.",
+    "safetyNote": "Never collect real passwords, don’t impersonate third parties without consent, and never operate outside the approved scope. In sandbox use test addresses and whitelisted domains.",
+    "steps": [
+      { "chip": "Step 1", "label": "Preparation & approval",
+        "paragraphs": [
+          "Confirm scope (departments/users), timeline and goals (open/click/report rate).",
+          "Obtain written authorization + contacts for SOC/IT/Helpdesk.",
+          "Agree on data retention and reporting recipients."
+        ]
+      },
+      { "chip": "Step 2", "label": "Import & segmentation of recipients",
+        "paragraphs": [
+          "Load users (CSV/API) and segment by teams/locations.",
+          "Exclude sensitive addresses—service accounts, shared HR mailboxes.",
+          "Optionally enable opt-out and a small pilot test group."
+        ]
+      },
+      { "chip": "Step 3", "label": "Choose sender domain (prepared)",
+        "paragraphs": [
+          "Pick one of the prepared sender domains (tech setup handled).",
+          "Verify FROM display name and reply-to.",
+          "Make sure the domain is approved by the customer."
+        ]
+      },
+      { "chip": "Step 4", "label": "Select email template & landing page",
+        "paragraphs": [
+          "Choose template (language, difficulty) and assign a landing page.",
+          "Fill variables (e.g., {{name}}) and verify desktop/mobile previews."
+        ]
+      },
+      { "chip": "Step 5", "label": "Campaign settings",
+        "paragraphs": [
+          "Set sender, reply-to, UTM parameters and throttling.",
+          "Add seed/test addresses and report recipients.",
+          "Respect working hours and local holidays."
+        ]
+      },
+      { "chip": "Step 6", "label": "Pilot send",
+        "paragraphs": [
+          "Send to a small sample and verify deliverability (MailHog/seed).",
+          "Check rendering across clients (Outlook/Web/Mobile).",
+          "After stakeholder approval, proceed to production waves."
+        ]
+      },
+      { "chip": "Step 7", "label": "Launch",
+        "paragraphs": [
+          "Schedule waves (time windows, randomization).",
+          "Enable soft-bounce retry as per policy.",
+          "Prepare a panic/stop procedure for incidents."
+        ]
+      },
+      { "chip": "Step 8", "label": "Live monitoring",
+        "paragraphs": [
+          "Track opens, clicks, form submissions and phishing reports.",
+          "Never store real passwords—collect safe indicators only.",
+          "Coordinate with Helpdesk/SOC on potential incidents."
+        ]
+      },
+      { "chip": "Step 9", "label": "Evaluation & awareness",
+        "paragraphs": [
+          "Produce reports (BRS, open/click/report, team heatmaps).",
+          "Plan follow-up micro-training and recommendations for leads.",
+          "Record lessons learned and propose improvements."
+        ]
+      },
+      { "chip": "Step 10", "label": "Retest & archiving",
+        "paragraphs": [
+          "Plan a retest in 30–90 days and compare trends.",
+          "Export results, anonymize per policy/retention and archive.",
+          "Close the campaign and update process docs."
+        ]
+      }
+    ]
+  }
+}

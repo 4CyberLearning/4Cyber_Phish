@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* ========= ENUMS ========= */
+
+enum CampaignStatus {
+  SCHEDULED
+  ACTIVE
+  FINISHED
+  CANCELED
+}
+
+enum InteractionType {
+  EMAIL_SENT
+  OPENED
+  CLICKED
+  SUBMITTED
+  REPORTED
+}
+
+enum TrainingStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+/* ========= TENANT ========= */
+
+model Tenant {
+  id           Int             @id @default(autoincrement())
+  name         String
+  slug         String          @unique
+  createdAt    DateTime        @default(now())
+
+  users        User[]
+  groups       Group[]
+  campaigns    Campaign[]
+  templates    EmailTemplate[]
+  landingPages LandingPage[]
+  trainings    TrainingModule[]
+  auditLogs    AuditLog[]
+}
+
+/* ========= USERS / GROUPS ========= */
+
+model User {
+  id          Int            @id @default(autoincrement())
+  tenantId    Int
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email       String         @unique
+  fullName    String?
+  department  String?
+  role        String?
+  isAdmin     Boolean        @default(false)
+  riskScore   Float          @default(0.0)
+  createdAt   DateTime       @default(now())
+
+  // relations
+  groupLinks  GroupMember[]
+  interactions Interaction[]
+  trainings   UserTraining[]
+  campaignLinks CampaignUser[]
+  auditLogs   AuditLog[]
+}
+
+model Group {
+  id        Int          @id @default(autoincrement())
+  tenantId  Int
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+
+  members   GroupMember[]
+
+  @@unique([tenantId, name])
+}
+
+model GroupMember {
+  userId   Int
+  groupId  Int
+  joinedAt DateTime @default(now())
+
+  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group  Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}
+
+/* ========= CONTENT (TEMPLATES / LP) ========= */
+
+model EmailTemplate {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name       String
+  subject    String
+  bodyHtml   String
+  tags       String[]
+  difficulty Int       @default(1)
+  createdAt  DateTime  @default(now())
+
+  // back-relations
+  campaigns  Campaign[]
+}
+
+model LandingPage {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name       String
+  urlSlug    String    @unique
+  html       String
+  tags       String[]
+  createdAt  DateTime  @default(now())
+
+  // back-relations
+  campaigns  Campaign[]
+}
+
+/* ========= CAMPAIGNS & TRACKING ========= */
+
+model Campaign {
+  id             Int            @id @default(autoincrement())
+  tenantId       Int
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?
+  scheduledAt    DateTime
+  status         CampaignStatus @default(SCHEDULED)
+
+  emailTemplateId Int
+  emailTemplate   EmailTemplate  @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)
+
+  landingPageId   Int
+  landingPage     LandingPage    @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
+
+  targetUsers    CampaignUser[]
+  interactions   Interaction[]
+  createdAt      DateTime @default(now())
+}
+
+model CampaignUser {
+  id         Int      @id @default(autoincrement())
+  campaignId Int
+  userId     Int
+  delivered  Boolean  @default(false)
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+}
+
+model Interaction {
+  id         Int             @id @default(autoincrement())
+  campaignId Int
+  userId     Int
+  type       InteractionType
+  timestamp  DateTime        @default(now())
+  meta       Json?
+
+  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, userId, type])
+}
+
+/* ========= TRAINING ========= */
+
+model TrainingModule {
+  id          Int           @id @default(autoincrement())
+  tenantId    Int
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  url         String      // video/scorm link
+  description String?
+  createdAt   DateTime     @default(now())
+
+  assignments UserTraining[]
+}
+
+model UserTraining {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  trainingId  Int
+  status      TrainingStatus @default(PENDING)
+  assignedAt  DateTime       @default(now())
+  completedAt DateTime?
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  training    TrainingModule @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trainingId])
+}
+
+/* ========= AUDIT ========= */
+
+model AuditLog {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  userId     Int?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action     String
+  entity     String?
+  entityId   Int?
+  timestamp  DateTime  @default(now())
+
+  @@index([tenantId, timestamp])
+}

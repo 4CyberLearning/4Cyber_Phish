@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --brand:        #00a2be;
+  --brand-strong: #006e8d;
+  --brand-soft:   #d1f3f3;
+}
+
+/* malý helper na jemný stín doprava */
+.shadow-right-soft{ box-shadow: 6px 0 14px -10px rgba(2,132,199,.15); }
+
+/* aktivní pruh vlevo u položky */
+.nav-active::before{
+  content:"";
+  position:absolute; left:0; top:6px; bottom:6px;
+  width:3px; border-radius: 2px;
+  background: var(--brand);
+}
+
+/* zmenšená typografie v menu */
+.text-menu      { font-size: 13px; line-height: 1.2; }
+.text-menu-sm   { font-size: 12px; line-height: 1.1; }
+
+@layer base {
+  /* Výchozí písmo pro celou appku */
+  body {
+    @apply font-sans antialiased text-gray-900;
+  }
+  /* jemná typografická doporučení */
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+}
+
+/* jemné přechody napříč aplikací */
+* { transition: background-color .4s, color .4s, border-color .4s, opacity .4s, transform .4s; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@keyframes fadeOut { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(8px) } }
+
+html, body, #root { height: 100%; background: #fff; }
+
+/* --- soft stíny a společná karta --- */
+@layer utilities {
+  .shadow-right-soft { box-shadow: 8px 0 24px -12px rgba(0,0,0,.22); }
+  .shadow-soft       { box-shadow: 0 8px 24px -12px rgba(0,0,0,.20); }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-lg border border-gray-200; box-shadow: 0 8px 24px -12px rgba(0,0,0,.20); }
+}
