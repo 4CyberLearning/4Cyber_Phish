@@ -1,0 +1,35 @@
+# kam uložit
+$doc = 'docs'; New-Item -Type Directory -Force $doc | Out-Null
+$ts  = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+# složky ignorované při průchodu
+$exclude = @('node_modules','.git','dist','build','coverage','.next','.cache','.turbo','.parcel-cache','.pnpm-store')
+
+function Build-Tree([string]$root,[string]$pad=''){
+  $dirs  = Get-ChildItem -LiteralPath $root -Directory | Where-Object { $exclude -notcontains $_.Name }
+  $files = Get-ChildItem -LiteralPath $root -File
+  foreach($d in $dirs){ $script:lines += "$pad📁 $($d.Name)"; Build-Tree -root $d.FullName -pad "$pad  " }
+  foreach($f in $files){ $script:lines += "$pad📄 $($f.Name)" }
+}
+
+$script:lines = @()
+Build-Tree (Get-Location).Path
+$tree = $script:lines -join "`r`n"
+
+# (volitelné) seznam trackovaných souborů z gitu
+$gitFiles = if (Test-Path .git) { (git ls-files) -join "`r`n" } else { "(not a git repo)" }
+
+# výsledný markdown
+$content = @"
+# 4Cyber_Phish — Project map
+Generated: $ts
+
+## Directory tree (filtered)
+$tree
+
+## Tracked files (git)
+$gitFiles
+"@
+
+Set-Content -Path "$doc\PROJECT_MAP.md" -Value $content -Encoding UTF8
+Write-Host "Wrote $doc\PROJECT_MAP.md" -ForegroundColor Green

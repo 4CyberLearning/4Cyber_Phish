@@ -20,8 +20,8 @@ services:
   backend_dev:
     build:
       context: ./server
-      # dockerfile: Dockerfile    # (nech default, nebo odkomentuj pokud máš jiný název)
     working_dir: /app
+    restart: always
     depends_on:
       db_dev:
         condition: service_healthy
@@ -39,12 +39,11 @@ services:
       SMTP_FROM: "4Cyber Phish <no-reply@dev.local>"
     volumes:
       - ./server:/app
-      - node_modules_backend_dev:/app/node_modules
     ports:
       - "5000:5000"
     command: >
       sh -euxc '
-        if [ ! -d node_modules ]; then npm ci; fi;
+        npm install;
         npx prisma generate;
         node index.js
       '
@@ -68,7 +67,7 @@ services:
       - "5173:5173"
     command: >
       sh -euxc '
-        if [ ! -x node_modules/.bin/vite ]; then npm ci; fi;
+        npm ci --legacy-peer-deps;
         npm run dev -- --host 0.0.0.0
       '
     profiles: ["dev"]
@@ -83,5 +82,4 @@ services:
 
 volumes:
   postgres_phish_data_dev:
-  node_modules_backend_dev:
   node_modules_frontend_dev:

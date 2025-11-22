@@ -1,82 +1,115 @@
 {
+  "common": {
+    "new": "Nová",
+    "save": "Uložit",
+    "delete": "Smazat",
+    "loading": "Načítám…"
+  },
+
   "playbook": {
-    "title": "Playbook: phishing simulation A–Z",
-    "intro": "This playbook describes an authorized simulation for awareness training and process testing. Always follow the law, internal policies, and have the organization’s consent.",
-    "safetyNote": "Never collect real passwords, don’t impersonate third parties without consent, and never operate outside the approved scope. In sandbox use test addresses and whitelisted domains.",
+    "title": "Playbook: phishing simulace A–Z",
+    "intro": "Tento playbook popisuje autorizovanou simulaci pro trénink povědomí a test procesů. Vždy dodržujte zákony, interní směrnice a souhlas organizace.",
+    "safetyNote": "Nikdy neshromažďujte reálná hesla, neodsouhlaseně neimitujte třetí strany a nechoďte mimo schválený rozsah. V sandboxu používejte testovací adresy a whitelistané domény.",
     "steps": [
-      { "chip": "Step 1", "label": "Preparation & approval",
+      {
+        "chip": "Krok 1",
+        "label": "Příprava a schválení",
         "paragraphs": [
-          "Confirm scope (departments/users), timeline and goals (open/click/report rate).",
-          "Obtain written authorization + contacts for SOC/IT/Helpdesk.",
-          "Agree on data retention and reporting recipients."
+          "Potvrďte rozsah (oddělení/uživatelé), časovou osu a cíle (míra otevření/kliknutí/nahlášení).",
+          "Získejte písemné povolení + kontakty na SOC/IT/Helpdesk.",
+          "Dohodněte retenční dobu dat a příjemce reportů."
         ]
       },
-      { "chip": "Step 2", "label": "Import & segmentation of recipients",
+      {
+        "chip": "Krok 2",
+        "label": "Import a segmentace příjemců",
         "paragraphs": [
-          "Load users (CSV/API) and segment by teams/locations.",
-          "Exclude sensitive addresses—service accounts, shared HR mailboxes.",
-          "Optionally enable opt-out and a small pilot test group."
+          "Načtěte uživatele (CSV/API) a rozdělte je podle týmů/lokalit.",
+          "Vynechejte citlivé adresy – servisní účty, sdílené HR schránky.",
+          "Volitelně povolte opt-out a malou pilotní skupinu."
         ]
       },
-      { "chip": "Step 3", "label": "Choose sender domain (prepared)",
+      {
+        "chip": "Krok 3",
+        "label": "Volba odesílací domény",
         "paragraphs": [
-          "Pick one of the prepared sender domains (tech setup handled).",
-          "Verify FROM display name and reply-to.",
-          "Make sure the domain is approved by the customer."
+          "Vyberte jednu z připravených domén (technické nastavení je hotové).",
+          "Ověřte FROM zobrazované jméno a reply-to.",
+          "Ujistěte se, že doména je schválená zákazníkem."
         ]
       },
-      { "chip": "Step 4", "label": "Select email template & landing page",
+      {
+        "chip": "Krok 4",
+        "label": "Výběr e-mailové šablony a landing page",
         "paragraphs": [
-          "Choose template (language, difficulty) and assign a landing page.",
-          "Fill variables (e.g., {{name}}) and verify desktop/mobile previews."
+          "Vyberte šablonu (jazyk, obtížnost) a přiřaďte landing page.",
+          "Doplňte proměnné (např. {{name}}) a zkontrolujte desktop/mobil náhled."
         ]
       },
-      { "chip": "Step 5", "label": "Campaign settings",
+      {
+        "chip": "Krok 5",
+        "label": "Nastavení kampaně",
         "paragraphs": [
-          "Set sender, reply-to, UTM parameters and throttling.",
-          "Add seed/test addresses and report recipients.",
-          "Respect working hours and local holidays."
+          "Nastavte odesílatele, reply-to, UTM parametry a throttling.",
+          "Přidejte seed/test adresy a příjemce reportů.",
+          "Respektujte pracovní dobu a lokální svátky."
         ]
       },
-      { "chip": "Step 6", "label": "Pilot send",
+      {
+        "chip": "Krok 6",
+        "label": "Pilotní rozeslání",
         "paragraphs": [
-          "Send to a small sample and verify deliverability (MailHog/seed).",
-          "Check rendering across clients (Outlook/Web/Mobile).",
-          "After stakeholder approval, proceed to production waves."
+          "Odešlete malému vzorku a ověřte doručitelnost (MailHog/seed).",
+          "Zkontrolujte vykreslení v klientech (Outlook/Web/Mobil).",
+          "Po schválení stakeholderů pokračujte na produkční vlny."
         ]
       },
-      { "chip": "Step 7", "label": "Launch",
+      {
+        "chip": "Krok 7",
+        "label": "Spuštění kampaně",
         "paragraphs": [
-          "Schedule waves (time windows, randomization).",
-          "Enable soft-bounce retry as per policy.",
-          "Prepare a panic/stop procedure for incidents."
+          "Naplánujte vlny (časová okna, náhodné rozložení).",
+          "Zapněte opakované pokusy u soft-bounce podle politiky.",
+          "Připravte panic/stop postup pro incidenty."
         ]
       },
-      { "chip": "Step 8", "label": "Live monitoring",
+      {
+        "chip": "Krok 8",
+        "label": "Live monitoring",
         "paragraphs": [
-          "Track opens, clicks, form submissions and phishing reports.",
-          "Never store real passwords—collect safe indicators only.",
-          "Coordinate with Helpdesk/SOC on potential incidents."
+          "Sledujte otevření, kliknutí, odeslané formuláře a hlášení phishingu.",
+          "Nikdy neukládejte reálná hesla – jen bezpečné indikátory.",
+          "Koordinujte se s Helpdeskem/SOC ohledně incidentů."
         ]
       },
-      { "chip": "Step 9", "label": "Evaluation & awareness",
+      {
+        "chip": "Krok 9",
+        "label": "Vyhodnocení a osvěta",
         "paragraphs": [
-          "Produce reports (BRS, open/click/report, team heatmaps).",
-          "Plan follow-up micro-training and recommendations for leads.",
-          "Record lessons learned and propose improvements."
+          "Vytvořte reporty (BRS, open/click/report, heatmapy týmů).",
+          "Naplánujte follow-up micro-trénink a doporučení pro vedení.",
+          "Zapište lessons learned a navrhněte zlepšení."
         ]
       },
-      { "chip": "Step 10", "label": "Retest & archiving",
+      {
+        "chip": "Krok 10",
+        "label": "Retest a archivace",
         "paragraphs": [
-          "Plan a retest in 30–90 days and compare trends.",
-          "Export results, anonymize per policy/retention and archive.",
-          "Close the campaign and update process docs."
+          "Naplánujte retest za 30–90 dní a porovnejte trendy.",
+          "Exportujte výsledky, anonymizujte dle politiky a archivujte.",
+          "Uzavřete kampaň a aktualizujte procesní dokumentaci."
         ]
       }
     ]
   },
+
   "nav": {
     "dashboard": "Dashboard",
+
+    "playbook": {
+      "title": "Návod"
+    },
+
     "content": {
       "title": "Obsah",
       "emailTemplates": "E-mailové šablony",
@@ -106,10 +139,6 @@
       "audit": "Audit"
     },
 
-    "playbook": {
-      "title": "Návod"
-    },
-
     "automation": {
       "title": "Automatizace",
       "rules": "Pravidla",
@@ -122,6 +151,51 @@
       "mail": "Mail",
       "api": "API klíče",
       "users": "Uživatelé"
+    }
+  },
+
+  "content": {
+    "emailTemplates": {
+      "title": "E-mailové šablony",
+      "view": {
+        "select": "Výběr šablon",
+        "edit": "Editor"
+      },
+      "empty": "Zatím nemáte žádné šablony.",
+      "fields": {
+        "name": "Název šablony",
+        "subject": "Předmět",
+        "tags": "Tagy",
+        "tagsPlaceholder": "např. onboarding, interní, spear-phishing",
+        "difficulty": "Obtížnost",
+        "bodyHtml": "HTML těla e-mailu",
+        "testEmailPlaceholder": "test@firma.cz"
+      },
+      "actions": {
+        "save": "Uložit šablonu",
+        "saveCopy": "Uložit jako novou šablonu",
+        "create": "Vytvořit",
+        "sendTest": "Poslat test",
+        "useAsBase": "Použít jako základ",
+        "editOriginal": "Editovat původní",
+        "newBlank": "Nová prázdná šablona"
+      },
+      "preview": {
+        "title": "Náhled e-mailu",
+        "empty": "Zatím žádný obsah. Začněte psát HTML šablonu."
+      },
+      "messages": {
+        "saved": "Šablona byla uložena.",
+        "deleted": "Šablona byla smazána.",
+        "confirmDelete": "Opravdu chcete tuto šablonu smazat?",
+        "saveBeforeTest": "Před odesláním testu nejdříve uložte šablonu.",
+        "testEmailRequired": "Zadejte e-mail pro testovací odeslání.",
+        "testSent": "Testovací e-mail byl odeslán.",
+        "nameRequired": "Zadejte název šablony.",
+        "confirmSave": "Uložit šablonu „{{name}}“ s předmětem „{{subject}}“?",
+        "confirmOverwrite": "Šablona se jménem „{{name}}“ už existuje. Přepsat ji těmito hodnotami (předmět „{{subject}}“)?",
+        "noSubject": "(bez předmětu)"
+      }
     }
   }
 }

@@ -8,6 +8,8 @@ import Campaigns from "./pages/Campaigns";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Playbook from "./pages/Playbook";
+import EmailTemplatesPage from "./pages/Content/EmailTemplates";
+
 
 export default function App() {
   const isAuthenticated = true; // zatím natvrdo
@@ -25,6 +27,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
             <Route path="/playbook" element={<Playbook />} />
+            <Route path="/content/email-templates" element={<EmailTemplatesPage />} />
           </Route>
         </Routes>
       ) : (

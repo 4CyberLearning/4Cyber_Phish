@@ -15,7 +15,7 @@ export default function AppLayout() {
     <div className="flex min-h-screen">
       <Sidebar />
 
-      <main className="flex-1 bg-gray-50 p-6 md:p-8">
+      <main className="flex-1 bg-gray-100 p-6 md:p-8">
         {/* DŮLEŽITÉ: počkej na exit před mountem nové stránky */}
         <AnimatePresence mode="wait">
           <motion.div

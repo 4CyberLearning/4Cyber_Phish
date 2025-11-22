@@ -14,13 +14,22 @@ export const nav = [
   },
   // --- skupiny s podmenu ---
   {
-    key: "nav.content.title",
+    key: "nav.content.title",     // label nadpisu "Obsah"
     iconName: "content",
     overview: "/content",
     children: [
-      { key: "nav.content.emailTemplates", to: "/content/email-templates" },
-      { key: "nav.content.landingPages",   to: "/content/landing-pages" },
-      { key: "nav.content.assets",         to: "/content/assets" },
+      {
+        key: "nav.content.emailTemplates",    // E-mailové šablony
+        to: "/content/email-templates",
+      },
+      {
+        key: "nav.content.landingPages",      // Landing pages
+        to: "/content/landing-pages",
+      },
+      {
+        key: "nav.content.assets",            // Assety / soubory
+        to: "/content/assets",
+      },
     ],
   },
   {

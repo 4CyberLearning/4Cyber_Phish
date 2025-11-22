@@ -45,6 +45,7 @@ model Tenant {
   landingPages LandingPage[]
   trainings    TrainingModule[]
   auditLogs    AuditLog[]
+  assets       Asset[]
 }
 
 /* ========= USERS / GROUPS ========= */
@@ -105,9 +106,12 @@ model EmailTemplate {
   tags       String[]
   difficulty Int       @default(1)
   createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   // back-relations
   campaigns  Campaign[]
+
+  @@unique([tenantId, name])
 }
 
 model LandingPage {
@@ -154,24 +158,38 @@ model CampaignUser {
   userId     Int
   delivered  Boolean  @default(false)
 
-  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // unikátní token pro trackování kliků / openů v rámci této kampaně
+  trackingToken String  @unique @default(uuid())
+
+  // agregovaná data pro reporting (rychlé tabulky "Users" per kampaň)
+  sentAt      DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  submittedAt DateTime?
+  reportedAt  DateTime?
+
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interactions Interaction[]
 
   @@unique([campaignId, userId])
 }
 
 model Interaction {
-  id         Int             @id @default(autoincrement())
-  campaignId Int
-  userId     Int
-  type       InteractionType
-  timestamp  DateTime        @default(now())
-  meta       Json?
+  id             Int             @id @default(autoincrement())
+  campaignId     Int
+  userId         Int
+  campaignUserId Int
+  type           InteractionType
+  timestamp      DateTime        @default(now())
+  meta           Json?
 
-  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignUser CampaignUser @relation(fields: [campaignUserId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, userId, type])
+  @@index([campaignUserId, type])
 }
 
 /* ========= TRAINING ========= */
@@ -219,4 +237,16 @@ model AuditLog {
   timestamp  DateTime  @default(now())
 
   @@index([tenantId, timestamp])
+}
+
+model Asset {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  fileName  String
+  url       String   @unique
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
 }

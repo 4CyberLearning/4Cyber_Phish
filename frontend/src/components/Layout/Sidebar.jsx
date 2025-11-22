@@ -31,6 +31,11 @@ const UI = {
   gridCols: "grid grid-cols-[1fr_20px] items-center", // text | šipka
 };
 
+function getNavLabel(t, key) {
+  const value = t(key, { defaultValue: key, returnObjects: false });
+  return typeof value === "string" ? value : key;
+}
+
 /* ---------- Leaf (podpoložka) ---------- */
 function Leaf({ to, label }) {
   return (
@@ -74,7 +79,7 @@ function PrimaryLink({ node, t }) {
             color="var(--brand-strong)"
           />
         )}
-        <span className="truncate">{t(node.key, { defaultValue: node.key })}</span>
+        <span className="truncate">{getNavLabel(t, node.key)}</span>
       </NavLink>
       {/* prázdná buňka pro srovnání se sloupcem šipek */}
       <span />
@@ -125,7 +130,7 @@ function Group({ node, t, currentPath }) {
               color="var(--brand-strong)"
             />
           )}
-          <span className="truncate">{t(node.key, { defaultValue: node.key })}</span>
+          <span className="truncate">{getNavLabel(t, node.key)}</span>
         </NavLink>
 
         <button
@@ -156,7 +161,7 @@ function Group({ node, t, currentPath }) {
           >
             <div className={UI.leafGap}>
               {(node.children || []).map((c) => (
-                <Leaf key={c.to} to={c.to} label={t(c.key, { defaultValue: c.key })} />
+                <Leaf key={c.to} to={c.to} label={getNavLabel(t, c.key)} />
               ))}
             </div>
           </motion.div>
