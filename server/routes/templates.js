@@ -1,14 +1,14 @@
 // server/routes/templates.js
-import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Router } from "express";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const router = express.Router();
+const router = Router();
 
+// Prozatím používáme jediného tenanta "demo"
 const DEFAULT_TENANT_SLUG = "demo";
 
 async function getTenantId() {
-  // najdu tenant podle slugu; pokud neexistuje, vytvořím demo tenant
   let tenant = await prisma.tenant.findUnique({
     where: { slug: DEFAULT_TENANT_SLUG },
   });
@@ -16,41 +16,60 @@ async function getTenantId() {
   if (!tenant) {
     tenant = await prisma.tenant.create({
       data: {
-        name: "Demo tenant",
         slug: DEFAULT_TENANT_SLUG,
+        name: "Demo tenant",
       },
     });
-    console.log("Created demo tenant with id", tenant.id);
   }
 
   return tenant.id;
 }
 
-function normalizeTemplateInput(body) {
-  const name = (body.name || "").trim();
-  const subject = (body.subject || "").trim();
-  const bodyHtml = body.bodyHtml || "";
-  const tags = Array.isArray(body.tags)
-    ? body.tags
-    : typeof body.tags === "string"
-    ? body.tags
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
-  const difficulty = Number(body.difficulty) || 1;
+/**
+ * Normalizace vstupu z frontendu do tvaru, který očekává Prisma.
+ * - tags: pole stringů (ze stringu "a,b,c" i z pole)
+ * - difficulty: číslo (default 1)
+ */
+function normalizeTemplateInput(body = {}) {
+  const {
+    name = "",
+    subject = "",
+    bodyHtml = "",
+    tags = [],
+    difficulty,
+  } = body;
 
-  return { name, subject, bodyHtml, tags, difficulty };
+  let tagsArr = [];
+
+  if (Array.isArray(tags)) {
+    tagsArr = tags.map(String).map((t) => t.trim()).filter(Boolean);
+  } else if (typeof tags === "string") {
+    tagsArr = tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  const difficultyNumber = Number.isFinite(Number(difficulty))
+    ? Number(difficulty)
+    : 1;
+
+  return {
+    name: String(name).trim(),
+    subject: String(subject).trim(),
+    bodyHtml: bodyHtml || "",
+    tags: tagsArr,
+    difficulty: difficultyNumber,
+  };
 }
 
-// GET /api/templates
+// GET /api/templates – seznam šablon
 router.get("/", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
-
     const templates = await prisma.emailTemplate.findMany({
       where: { tenantId },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { createdAt: "desc" },
     });
     res.json(templates);
   } catch (err) {
@@ -59,85 +78,118 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// POST /api/templates
+// GET /api/templates/:id – detail šablony
+router.get("/:id", async (req, res) => {
+  try {
+    const tenantId = await getTenantId();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+
+    const template = await prisma.emailTemplate.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    res.json(template);
+  } catch (err) {
+    console.error("GET /api/templates/:id error", err);
+    res.status(500).json({ error: "Failed to load template" });
+  }
+});
+
+// POST /api/templates – vytvoření nové šablony
 router.post("/", async (req, res) => {
   try {
-    const data = normalizeTemplateInput(req.body);
+    const tenantId = await getTenantId();
+    const data = normalizeTemplateInput(req.body || {});
+
     if (!data.name) {
       return res.status(400).json({ error: "Name is required" });
     }
 
-    const tenantId = await getTenantId();
-
     const created = await prisma.emailTemplate.create({
-      data: { tenantId, ...data },
+      data: {
+        tenantId,
+        name: data.name,
+        subject: data.subject,
+        bodyHtml: data.bodyHtml,
+        tags: data.tags,
+        difficulty: data.difficulty,
+      },
     });
 
     res.status(201).json(created);
   } catch (err) {
     console.error("POST /api/templates error", err);
-
-    if (err.code === "P2002") {
-      return res
-        .status(409)
-        .json({ error: "Template with this name already exists" });
-    }
-
-    res.status(500).json({
-      error: "Failed to create template",
-      detail: err?.message || String(err),
-    });
+    res.status(500).json({ error: "Failed to create template" });
   }
 });
 
-// PUT /api/templates/:id
+// PUT /api/templates/:id – úprava šablony
 router.put("/:id", async (req, res) => {
   try {
+    const tenantId = await getTenantId();
     const id = Number(req.params.id);
-    const data = normalizeTemplateInput(req.body);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+
+    const data = normalizeTemplateInput(req.body || {});
+
     if (!data.name) {
       return res.status(400).json({ error: "Name is required" });
     }
 
-    const tenantId = await getTenantId();
-
     const existing = await prisma.emailTemplate.findFirst({
       where: { id, tenantId },
     });
+
     if (!existing) {
       return res.status(404).json({ error: "Template not found" });
     }
 
     const updated = await prisma.emailTemplate.update({
       where: { id },
-      data,
+      data: {
+        name: data.name,
+        subject: data.subject,
+        bodyHtml: data.bodyHtml,
+        tags: data.tags,
+        difficulty: data.difficulty,
+      },
     });
+
     res.json(updated);
   } catch (err) {
     console.error("PUT /api/templates/:id error", err);
-    if (err.code === "P2002") {
-      return res
-        .status(409)
-        .json({ error: "Template with this name already exists" });
-    }
     res.status(500).json({ error: "Failed to update template" });
   }
 });
 
-// DELETE /api/templates/:id
+// DELETE /api/templates/:id – smazání šablony
 router.delete("/:id", async (req, res) => {
   try {
-    const id = Number(req.params.id);
     const tenantId = await getTenantId();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
 
     const existing = await prisma.emailTemplate.findFirst({
       where: { id, tenantId },
     });
+
     if (!existing) {
       return res.status(404).json({ error: "Template not found" });
     }
 
     await prisma.emailTemplate.delete({ where: { id } });
+
     res.status(204).send();
   } catch (err) {
     console.error("DELETE /api/templates/:id error", err);
@@ -148,12 +200,13 @@ router.delete("/:id", async (req, res) => {
 // POST /api/templates/:id/send-test – zatím jen stub
 router.post("/:id/send-test", async (req, res) => {
   try {
-    const { to } = req.body;
+    const { to } = req.body || {};
     if (!to) {
       return res.status(400).json({ error: "Missing test email address" });
     }
-    // TODO: později napojíme na utils/mailer.js / MailHog
-    return res.json({ ok: true });
+
+    // TODO: napojit na utils/mailer.js / MailHog
+    res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/templates/:id/send-test error", err);
     res.status(500).json({ error: "Failed to send test email" });

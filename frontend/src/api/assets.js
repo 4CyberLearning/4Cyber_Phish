@@ -7,9 +7,10 @@ export async function uploadAsset(file) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE_URL}/api/assets`, {
+  const res = await fetch(`${API_BASE_URL}/api/assets/upload`, {
     method: "POST",
     body: formData,
+    credentials: "include",
   });
 
   if (!res.ok) {

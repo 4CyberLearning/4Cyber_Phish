@@ -1,35 +1,86 @@
+// server/index.js
 import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
+import session from "express-session";
 import path from "path";
 import { fileURLToPath } from "url";
-import { PrismaClient } from "@prisma/client";
-import authRoutes from "./routes/auth.js";
-import campaignRoutes from "./routes/campaigns.js";
-import templatesRoutes from "./routes/templates.js";
-import assetsRoutes from "./routes/assets.js";
 
-dotenv.config();
+import templatesRouter from "./routes/templates.js";
+import assetsRouter from "./routes/assets.js";
+import campaignsRouter from "./routes/campaigns.js";
+import authRouter from "./routes/auth.js";
+import debugRouter from "./routes/debug.js";
 
 const app = express();
-const prisma = new PrismaClient();
+
+const PORT = process.env.PORT || 5000;
+const FRONTEND_ORIGIN =
+  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use(cors());
-app.use(express.json());
+// CORS pro FE (Vite dev na 5173)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", FRONTEND_ORIGIN);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
-// statické soubory (obrázky)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// session pro auth / kampaně / debug
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      sameSite: "lax",
+      secure: false, // pro lokální HTTP
+    },
+  })
+);
+
+// statické servírování nahraných souborů (obrázky v šablonách)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.use("/api", authRoutes);
-app.use("/api", campaignRoutes);
-app.use("/api/templates", templatesRoutes);
-app.use("/api/assets", assetsRoutes);
+// ROUTES ------------------------------------------------------
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// login/logout/me → /api/auth/...
+app.use("/api", authRouter);
 
-app.listen(process.env.PORT || 5000, () =>
-  console.log("✅ Backend running at http://localhost:5000")
-);
+// CRUD e-mailových šablon – BEZ loginu (tenant = demo)
+app.use("/api/templates", templatesRouter);
+
+// assets → /api/assets, /api/assets/upload
+app.use("/api/assets", assetsRouter);
+
+// kampaně – session guard je přímo v campaignsRouteru
+app.use("/api", campaignsRouter);
+
+// debug utilitky přesunuty pod /api/debug/...
+app.use("/api/debug", debugRouter);
+
+// jednoduchý health check
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+// fallback error handler (log + 500)
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});

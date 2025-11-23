@@ -11,6 +11,7 @@ async function request(path, options = {}) {
       ...(options.headers || {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+    credentials: "include",
   });
 
   if (!res.ok) {
