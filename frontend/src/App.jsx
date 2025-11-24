@@ -1,3 +1,4 @@
+import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./components/Layout/AppLayout";
 import LoginForm from "./components/Auth/LoginForm";
@@ -15,7 +16,7 @@ export default function App() {
   const isAuthenticated = true; // zatím natvrdo
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       {isAuthenticated ? (
         <Routes>
           <Route element={<AppLayout />}>

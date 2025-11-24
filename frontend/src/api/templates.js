@@ -1,52 +1,61 @@
-// src/api/templates.js
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+// frontend/src/api/templates.js
+const API_BASE =
+  (import.meta.env.VITE_API_BASE_URL &&
+    import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")) ||
+  "";
 
-// společná helper funkce na JSON requesty (bez credentials)
 async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    credentials: "include",
-  });
+  const url = API_BASE ? `${API_BASE}${path}` : path;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
+  } catch (err) {
+    console.error("Network error while calling API", err);
+    throw new Error("Network error while calling API");
+  }
+
+  let data = null;
+  try {
+    if (res.status !== 204) {
+      data = await res.json();
+    }
+  } catch {
+    // ignoruj chybu JSONu
+  }
 
   if (!res.ok) {
-    let message = "Failed to fetch";
-    try {
-      const data = await res.json();
-      message = data.error || data.message || message;
-    } catch {
-      // ignoruj parse chybu
-    }
-    throw new Error(message);
+    const msg =
+      (data && data.error) ||
+      `API error ${res.status} ${res.statusText || ""}`.trim();
+    throw new Error(msg);
   }
 
-  if (res.status === 204) {
-    return null;
-  }
-
-  return res.json();
+  return data;
 }
 
 export function listTemplates() {
   return request("/api/templates");
 }
 
-export function createTemplate(data) {
+export function createTemplate(payload) {
   return request("/api/templates", {
     method: "POST",
-    body: data,
+    body: JSON.stringify(payload),
   });
 }
 
-export function updateTemplate(id, data) {
+export function updateTemplate(id, payload) {
   return request(`/api/templates/${id}`, {
     method: "PUT",
-    body: data,
+    body: JSON.stringify(payload),
   });
 }
 
@@ -59,6 +68,6 @@ export function deleteTemplate(id) {
 export function sendTemplateTest(id, to) {
   return request(`/api/templates/${id}/send-test`, {
     method: "POST",
-    body: { to },
+    body: JSON.stringify({ to }),
   });
 }

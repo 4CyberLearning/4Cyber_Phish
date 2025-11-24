@@ -44,6 +44,7 @@ services:
     command: >
       sh -euxc '
         npm install;
+        npx prisma migrate deploy;
         npx prisma generate;
         node index.js
       '

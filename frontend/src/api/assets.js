@@ -1,28 +1,41 @@
-// src/api/assets.js
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+// frontend/src/api/assets.js
+const API_BASE =
+  (import.meta.env.VITE_API_BASE_URL &&
+    import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")) ||
+  "";
 
-// upload souboru přes FormData (bez credentials, bez ručního Content-Type)
-export async function uploadAsset(file) {
+async function uploadAsset(file) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE_URL}/api/assets/upload`, {
-    method: "POST",
-    body: formData,
-    credentials: "include",
-  });
+  try {
+    const url = API_BASE ? `${API_BASE}/api/assets` : "/api/assets";
 
-  if (!res.ok) {
-    let message = "Failed to upload asset";
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    let data = null;
     try {
-      const data = await res.json();
-      message = data.error || data.message || message;
+      data = await res.json();
     } catch {
-      // ignoruj parse chybu
+      // nic
     }
-    throw new Error(message);
-  }
 
-  return res.json(); // očekáváme { id, url, ... }
+    if (!res.ok) {
+      const msg =
+        (data && data.error) ||
+        `Asset upload failed (${res.status} ${res.statusText || ""})`.trim();
+      throw new Error(msg);
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Asset upload error", err);
+    throw new Error("Image upload failed");
+  }
 }
+
+export { uploadAsset };

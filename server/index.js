@@ -1,86 +1,76 @@
 // server/index.js
 import express from "express";
 import session from "express-session";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 
+import authRouter from "./routes/auth.js";
 import templatesRouter from "./routes/templates.js";
 import assetsRouter from "./routes/assets.js";
 import campaignsRouter from "./routes/campaigns.js";
-import authRouter from "./routes/auth.js";
 import debugRouter from "./routes/debug.js";
-
-const app = express();
-
-const PORT = process.env.PORT || 5000;
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// CORS pro FE (Vite dev na 5173)
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", FRONTEND_ORIGIN);
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-  next();
-});
+const app = express();
+const PORT = process.env.PORT || 5000;
 
-app.use(express.json());
+// ---------- CORS (pro vývoj klidně úplně otevřené) ----------
+app.use(
+  cors({
+    origin(origin, cb) {
+      // povolíme vše – v produkci si to můžeš zpřísnit
+      cb(null, true);
+    },
+    credentials: true,
+  })
+);
+
+// ---------- Parsování požadavků ----------
+app.use(cookieParser());
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// session pro auth / kampaně / debug
+// ---------- Session ----------
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "dev-secret",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
+      httpOnly: true,
       sameSite: "lax",
-      secure: false, // pro lokální HTTP
     },
   })
 );
 
-// statické servírování nahraných souborů (obrázky v šablonách)
+// ---------- Statické soubory ----------
+app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ROUTES ------------------------------------------------------
-
-// login/logout/me → /api/auth/...
-app.use("/api", authRouter);
-
-// CRUD e-mailových šablon – BEZ loginu (tenant = demo)
+// ---------- Routy ----------
+app.use(authRouter); // /auth/...
 app.use("/api/templates", templatesRouter);
-
-// assets → /api/assets, /api/assets/upload
 app.use("/api/assets", assetsRouter);
+app.use("/api", campaignsRouter);   // /api/campaigns...
+app.use("/api/debug", debugRouter); // /api/debug/...
 
-// kampaně – session guard je přímo v campaignsRouteru
-app.use("/api", campaignsRouter);
-
-// debug utilitky přesunuty pod /api/debug/...
-app.use("/api/debug", debugRouter);
-
-// jednoduchý health check
-app.get("/api/health", (_req, res) => {
+// jednoduchý healthcheck – můžeš si ho otevřít v prohlížeči
+app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
 });
 
-// fallback error handler (log + 500)
+// ---------- Error handler ----------
 app.use((err, _req, res, _next) => {
-  console.error(err);
+  console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
 });
 
+// ---------- Start serveru ----------
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Backend listening on port ${PORT}`);
 });
