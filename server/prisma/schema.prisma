@@ -38,14 +38,31 @@ model Tenant {
   slug         String          @unique
   createdAt    DateTime        @default(now())
 
-  users        User[]
-  groups       Group[]
-  campaigns    Campaign[]
-  templates    EmailTemplate[]
-  landingPages LandingPage[]
-  trainings    TrainingModule[]
-  auditLogs    AuditLog[]
-  assets       Asset[]
+  users            User[]
+  groups           Group[]
+  campaigns        Campaign[]
+  templates        EmailTemplate[]
+  landingPages     LandingPage[]
+  trainings        TrainingModule[]
+  auditLogs        AuditLog[]
+  assets           Asset[]
+  senderIdentities SenderIdentity[]
+  senderDomains    SenderDomain[]
+}
+
+model SenderDomain {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  domain    String
+  label     String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  identities SenderIdentity[]
+
+  @@unique([tenantId, domain])
 }
 
 /* ========= USERS / GROUPS ========= */
@@ -114,6 +131,28 @@ model EmailTemplate {
   @@unique([tenantId, name])
 }
 
+model SenderIdentity {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  fromName    String
+  localPart   String
+  replyTo     String?
+  description String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  senderDomainId Int
+  senderDomain   SenderDomain @relation(fields: [senderDomainId], references: [id], onDelete: Cascade)
+
+  campaigns   Campaign[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, senderDomainId, localPart])
+}
+
 model LandingPage {
   id         Int       @id @default(autoincrement())
   tenantId   Int
@@ -146,6 +185,9 @@ model Campaign {
 
   landingPageId   Int
   landingPage     LandingPage    @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
+
+  senderIdentityId Int?
+  senderIdentity   SenderIdentity? @relation(fields: [senderIdentityId], references: [id], onDelete: SetNull)
 
   targetUsers    CampaignUser[]
   interactions   Interaction[]
@@ -187,9 +229,6 @@ model Interaction {
   campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaignUser CampaignUser @relation(fields: [campaignUserId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId, userId, type])
-  @@index([campaignUserId, type])
 }
 
 /* ========= TRAINING ========= */

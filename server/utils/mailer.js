@@ -16,12 +16,13 @@ const transporter = nodemailer.createTransport({
   auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
 });
 
-export async function sendMail({ to, subject, html }) {
+export async function sendMail({ to, subject, html, from, replyTo }) {
   const info = await transporter.sendMail({
-    from: SMTP_FROM,
+    from: from || SMTP_FROM,
     to,
     subject,
     html,
+    ...(replyTo ? { replyTo } : {}),
   });
   return info;
 }

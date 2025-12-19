@@ -65,7 +65,7 @@ function EmailPreview({ html }) {
     <iframe
       ref={iframeRef}
       title="email-preview"
-      className="h-full w-full rounded-lg border border-gray-200 bg-white"
+      className="w-full h-[600px] rounded-lg border border-gray-200 bg-white"
     />
   );
 }
@@ -368,11 +368,20 @@ export default function EmailTemplatesPage() {
       {/* hlavička + přepínač režimu */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-gray-900">
-            {t("content.emailTemplates.title")}
-          </h1>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold text-gray-900">
+              {t("content.emailTemplates.title")}
+            </h1>
+            <p className="text-xs text-gray-500">
+              Dostupné proměnné v šabloně:&nbsp;
+              <code>{"{{name}}"}</code>,{" "}
+              <code>{"{{email}}"}</code>,{" "}
+              <code>{"{{link}}"}</code>
+            </p>
+          </div>
 
           <div className="flex items-center gap-3">
+
             <div className="inline-flex rounded-full bg-gray-100 p-1 text-xs">
               <button
                 type="button"

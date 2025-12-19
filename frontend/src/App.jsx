@@ -10,7 +10,9 @@ import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Playbook from "./pages/Playbook";
 import EmailTemplatesPage from "./pages/Content/EmailTemplates";
-
+import LandingPagesPage from "./pages/Content/LandingPages";
+import SenderIdentitiesPage from "./pages/Content/SenderIdentities";
+import CampaignDetail from "./pages/CampaignDetail";
 
 export default function App() {
   const isAuthenticated = true; // zatím natvrdo
@@ -24,11 +26,14 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/content" element={<ContentPage />} />
             <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/campaigns/:id" element={<CampaignDetail />} />
             <Route path="/users" element={<Users />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
             <Route path="/playbook" element={<Playbook />} />
             <Route path="/content/email-templates" element={<EmailTemplatesPage />} />
+            <Route path="/content/landing-pages" element={<LandingPagesPage />} />
+            <Route path="/content/sender-identities" element={<SenderIdentitiesPage />} />
           </Route>
         </Routes>
       ) : (

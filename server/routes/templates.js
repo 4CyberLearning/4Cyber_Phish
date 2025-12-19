@@ -74,7 +74,9 @@ router.get("/", async (_req, res) => {
     res.json(templates);
   } catch (err) {
     console.error("GET /api/templates error", err);
-    res.status(500).json({ error: "Failed to load templates" });
+    res
+      .status(500)
+      .json({ error: err?.message || "Failed to load templates" });
   }
 });
 

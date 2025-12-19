@@ -27,6 +27,10 @@ export const nav = [
         to: "/content/landing-pages",
       },
       {
+        key: "nav.content.senderIdentities",  // Odesílací identity
+        to: "/content/sender-identities",
+      },
+      {
         key: "nav.content.assets",            // Assety / soubory
         to: "/content/assets",
       },
@@ -47,9 +51,9 @@ export const nav = [
     iconName: "users",
     overview: "/recipients",
     children: [
-      { key: "nav.recipients.upload", to: "/recipients/upload" },
-      { key: "nav.recipients.groups", to: "/recipients/groups" },
-      { key: "nav.recipients.rules",  to: "/recipients/rules" },
+      { key: "nav.recipients.upload", to: "/users", },
+      { key: "nav.recipients.groups", to: "/users", },
+      { key: "nav.recipients.rules",  to: "/users", },
     ],
   },
   {

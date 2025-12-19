@@ -8,9 +8,15 @@ import { fileURLToPath } from "url";
 
 import authRouter from "./routes/auth.js";
 import templatesRouter from "./routes/templates.js";
+import landingPagesRouter from "./routes/landingPages.js";
 import assetsRouter from "./routes/assets.js";
 import campaignsRouter from "./routes/campaigns.js";
 import debugRouter from "./routes/debug.js";
+import trackingRouter from "./routes/tracking.js";
+import recipientsRouter from "./routes/recipients.js";
+import senderIdentitiesRouter from "./routes/senderIdentities.js";
+import senderDomainsRouter from "./routes/senderDomains.js";
+import campaignReportsRouter from "./routes/campaignReports.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,8 +62,15 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(authRouter); // /auth/...
 app.use("/api/templates", templatesRouter);
 app.use("/api/assets", assetsRouter);
+app.use("/api", senderDomainsRouter);
+app.use("/api", senderIdentitiesRouter);
 app.use("/api", campaignsRouter);   // /api/campaigns...
+app.use("/api", campaignReportsRouter);
 app.use("/api/debug", debugRouter); // /api/debug/...
+app.use("/t", trackingRouter);      // /t/o/:token.gif, /t/c/:token
+app.use("/api", recipientsRouter);
+app.use("/api/landing-pages", landingPagesRouter);
+
 
 // jednoduchý healthcheck – můžeš si ho otevřít v prohlížeči
 app.get("/healthz", (_req, res) => {

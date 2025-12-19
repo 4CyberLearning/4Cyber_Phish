@@ -1,5 +1,5 @@
 ﻿# 4Cyber_Phish — Project map
-Generated: 2025-11-23 21:47:35
+Generated: 2025-11-29 16:12:13
 
 ## Directory tree (filtered)
 📁 docs
@@ -11,7 +11,9 @@ Generated: 2025-11-23 21:47:35
   📁 src
     📁 api
       📄 assets.js
+      📄 landingPages.js
       📄 templates.js
+      📄 users.js
     📁 assets
       📁 icons
         📄 automation.png
@@ -43,6 +45,7 @@ Generated: 2025-11-23 21:47:35
     📁 pages
       📁 Content
         📄 EmailTemplates.jsx
+        📄 LandingPages.jsx
         📄 Overview.js
       📄 Campaigns.jsx
       📄 Content.jsx
@@ -85,9 +88,14 @@ Generated: 2025-11-23 21:47:35
     📄 auth.js
     📄 campaigns.js
     📄 debug.js
+    📄 landingPages.js
+    📄 recipients.js
     📄 templates.js
+    📄 tracking.js
+    📄 users.js
   📁 uploads
   📁 utils
+    📄 emailTracking.js
     📄 mailer.js
   📄 .env
   📄 .gitignore
@@ -102,13 +110,15 @@ Generated: 2025-11-23 21:47:35
 📄 package-lock.json
 📄 project_tree_script.txt
 📄 README.md
-📄 tree_script.txt
+📄 Technický rozbor funkcionalit phishingových nástrojů a návrh architektury.docx
 📄 vite.config.js
-📄 vzor html.txt
+📄 vzor email.txt
+📄 vzor landing page.txt
 
 ## Tracked files (git)
 .gitignore
 README.md
+"Technick\303\275 rozbor funkcionalit phishingov\303\275ch n\303\241stroj\305\257 a n\303\241vrh architektury.docx"
 docker-compose.yml
 docs/PROJECT_MAP.md
 frontend/.gitignore
@@ -178,6 +188,5 @@ server/routes/campaigns.js
 server/routes/debug.js
 server/routes/templates.js
 server/utils/mailer.js
-tree_script.txt
 vite.config.js
 vzor html.txt
