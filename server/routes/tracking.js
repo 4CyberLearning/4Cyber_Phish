@@ -5,6 +5,12 @@ import { PrismaClient, InteractionType } from "@prisma/client";
 const prisma = new PrismaClient();
 const router = Router();
 
+// základ pro veřejný web (landing stránky)
+const WEB_BASE =
+  (process.env.PUBLIC_WEB_BASE_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    "").replace(/\/$/, "");
+
 // 1x1 transparentní GIF (base64)
 const PIXEL = Buffer.from(
   "R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=",
@@ -108,8 +114,15 @@ router.get("/c/:token", async (req, res) => {
   } catch (e) {
     console.error("CLICK tracking error", e);
   } finally {
-    // kam přesměrovat – zatím použij cílový URL nebo root
-    res.redirect(302, target || "/");
+    // kam přesměrovat
+    let redirectTarget = target || "/";
+
+    // pokud je target relativní ("/něco"), předejdi ho na WEB_BASE
+    if (redirectTarget.startsWith("/") && WEB_BASE) {
+      redirectTarget = WEB_BASE + redirectTarget;
+    }
+
+    res.redirect(302, redirectTarget);
   }
 });
 

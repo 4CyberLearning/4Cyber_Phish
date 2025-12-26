@@ -12,6 +12,7 @@ import Playbook from "./pages/Playbook";
 import EmailTemplatesPage from "./pages/Content/EmailTemplates";
 import LandingPagesPage from "./pages/Content/LandingPages";
 import SenderIdentitiesPage from "./pages/Content/SenderIdentities";
+import CampaignCreate from "./pages/CampaignCreate";
 import CampaignDetail from "./pages/CampaignDetail";
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/content" element={<ContentPage />} />
             <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/campaigns/new" element={<CampaignCreate />} />
             <Route path="/campaigns/:id" element={<CampaignDetail />} />
             <Route path="/users" element={<Users />} />
             <Route path="/settings" element={<Settings />} />

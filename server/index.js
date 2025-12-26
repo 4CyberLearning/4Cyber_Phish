@@ -17,6 +17,7 @@ import recipientsRouter from "./routes/recipients.js";
 import senderIdentitiesRouter from "./routes/senderIdentities.js";
 import senderDomainsRouter from "./routes/senderDomains.js";
 import campaignReportsRouter from "./routes/campaignReports.js";
+import publicLandingRouter from "./routes/publicLanding.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,7 +71,7 @@ app.use("/api/debug", debugRouter); // /api/debug/...
 app.use("/t", trackingRouter);      // /t/o/:token.gif, /t/c/:token
 app.use("/api", recipientsRouter);
 app.use("/api/landing-pages", landingPagesRouter);
-
+app.use("/lp", publicLandingRouter);
 
 // jednoduchý healthcheck – můžeš si ho otevřít v prohlížeči
 app.get("/healthz", (_req, res) => {

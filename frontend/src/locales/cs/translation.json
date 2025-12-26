@@ -3,7 +3,8 @@
     "new": "Nová",
     "save": "Uložit",
     "delete": "Smazat",
-    "loading": "Načítám…"
+    "loading": "Načítám…",
+    "cancel": "Zrušit"
   },
 
   "playbook": {
@@ -195,6 +196,40 @@
         "confirmSave": "Uložit šablonu „{{name}}“ s předmětem „{{subject}}“?",
         "confirmOverwrite": "Šablona se jménem „{{name}}“ už existuje. Přepsat ji těmito hodnotami (předmět „{{subject}}“)?",
         "noSubject": "(bez předmětu)"
+      }
+    },
+
+    "recipients": {
+      "title": "Příjemci kampaní",
+
+      "actions": {
+        "importCsv": "Import CSV",
+        "newGroup": "Nová skupina",
+        "newUser": "Nový příjemce",
+        "save": "Uložit"
+      },
+
+      "groups": {
+        "title": "Skupiny",
+        "all": "Všichni příjemci",
+        "ungrouped": "Bez skupiny",
+        "empty": "Zatím nemáte žádné skupiny."
+      },
+
+      "users": {
+        "title": "Příjemci (uživatelé)",
+        "empty": "Zatím nemáte žádné příjemce."
+      },
+
+      "messages": {
+        "emailRequired": "E-mail je povinný.",
+        "saved": "Příjemce uložen.",
+        "confirmDeleteUser": "Opravdu chcete tohoto příjemce smazat?",
+        "deleted": "Příjemce byl smazán.",
+        "newGroupPrompt": "Zadejte název nové skupiny:",
+        "groupCreated": "Skupina vytvořena.",
+        "confirmDeleteGroup": "Opravdu chcete tuto skupinu smazat? Členství uživatelů bude odstraněno.",
+        "groupDeleted": "Skupina byla smazána."
       }
     }
   }

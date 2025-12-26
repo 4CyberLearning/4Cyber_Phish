@@ -1,16 +1,24 @@
-import { useEffect, useState } from "react";
-import {
-  listSenderIdentities,
-  createSenderIdentity,
-  updateSenderIdentity,
-  deleteSenderIdentity,
-} from "../../api/senderIdentities";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   listSenderDomains,
   createSenderDomain,
   updateSenderDomain,
   deleteSenderDomain,
 } from "../../api/senderDomains";
+import {
+  listSenderIdentities,
+  createSenderIdentity,
+  updateSenderIdentity,
+  deleteSenderIdentity,
+} from "../../api/senderIdentities";
+
+const EMPTY_DOMAIN = {
+  id: null,
+  domain: "",
+  description: "",
+  isDefault: false,
+};
 
 const EMPTY_IDENTITY = {
   id: null,
@@ -19,606 +27,687 @@ const EMPTY_IDENTITY = {
   localPart: "",
   senderDomainId: "",
   replyTo: "",
-  description: "",
+  note: "",
   isDefault: false,
 };
 
-const EMPTY_DOMAIN = {
-  id: null,
-  domain: "",
-  label: "",
-  isDefault: false,
-};
+function formatSender(identity) {
+  if (!identity) return "";
+  const local = identity.localPart;
+  const domain = identity.senderDomain?.domain;
+  const email = local && domain ? `${local}@${domain}` : null;
+
+  if (identity.fromName && email) {
+    return `${identity.fromName} <${email}>`;
+  }
+  return email || identity.fromName || "";
+}
 
 export default function SenderIdentitiesPage() {
-  const [identities, setIdentities] = useState([]);
+  const { t } = useTranslation();
   const [domains, setDomains] = useState([]);
-
-  const [identityForm, setIdentityForm] = useState(EMPTY_IDENTITY);
-  const [domainForm, setDomainForm] = useState(EMPTY_DOMAIN);
-
-  const [editingIdentityId, setEditingIdentityId] = useState(null);
-  const [editingDomainId, setEditingDomainId] = useState(null);
+  const [identities, setIdentities] = useState([]);
 
   const [loading, setLoading] = useState(true);
-  const [savingIdentity, setSavingIdentity] = useState(false);
-  const [savingDomain, setSavingDomain] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
 
-  function setIdentityField(field, value) {
-    setIdentityForm((prev) => ({ ...prev, [field]: value }));
-  }
+  const [domainForm, setDomainForm] = useState(EMPTY_DOMAIN);
+  const [identityForm, setIdentityForm] = useState(EMPTY_IDENTITY);
 
-  function setDomainField(field, value) {
-    setDomainForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  async function loadAll() {
-    setLoading(true);
-    setError(null);
-    try {
-      const [ids, doms] = await Promise.all([
-        listSenderIdentities(),
-        listSenderDomains(),
-      ]);
-      setIdentities(Array.isArray(ids) ? ids : []);
-      setDomains(Array.isArray(doms) ? doms : []);
-    } catch (e) {
-      console.error(e);
-      setError(e.message || "Nepodařilo se načíst data");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [domainSearch, setDomainSearch] = useState("");
+  const [identitySearch, setIdentitySearch] = useState("");
 
   useEffect(() => {
+    async function loadAll() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [doms, ids] = await Promise.all([
+          listSenderDomains(),
+          listSenderIdentities(),
+        ]);
+        setDomains(Array.isArray(doms) ? doms : []);
+        setIdentities(Array.isArray(ids) ? ids : []);
+      } catch (e) {
+        console.error(e);
+        setError(
+          e.message ||
+            "Nepodařilo se načíst data o doménách a identitách."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
     loadAll();
   }, []);
 
-  function resetIdentityForm() {
-    setEditingIdentityId(null);
-    setIdentityForm(EMPTY_IDENTITY);
-  }
+  const filteredDomains = useMemo(() => {
+    const q = domainSearch.trim().toLowerCase();
+    if (!q) return domains;
+    return domains.filter((d) => {
+      const domain = (d.domain || "").toLowerCase();
+      const desc = (d.description || "").toLowerCase();
+      return domain.includes(q) || desc.includes(q);
+    });
+  }, [domains, domainSearch]);
+
+  const filteredIdentities = useMemo(() => {
+    const q = identitySearch.trim().toLowerCase();
+    if (!q) return identities;
+    return identities.filter((i) => {
+      const name = (i.name || "").toLowerCase();
+      const fromName = (i.fromName || "").toLowerCase();
+      const localPart = (i.localPart || "").toLowerCase();
+      const domain = (i.senderDomain?.domain || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        fromName.includes(q) ||
+        localPart.includes(q) ||
+        domain.includes(q)
+      );
+    });
+  }, [identities, identitySearch]);
 
   function resetDomainForm() {
-    setEditingDomainId(null);
     setDomainForm(EMPTY_DOMAIN);
   }
 
-  function handleEditIdentity(item) {
-    setEditingIdentityId(item.id);
-    setIdentityForm({
-      id: item.id,
-      name: item.name || "",
-      fromName: item.fromName || "",
-      localPart: item.localPart || "",
-      senderDomainId: item.senderDomainId || "",
-      replyTo: item.replyTo || "",
-      description: item.description || "",
-      isDefault: !!item.isDefault,
-    });
+  function resetIdentityForm() {
+    setIdentityForm(EMPTY_IDENTITY);
+  }
+
+  function handleDomainField(field, value) {
+    setDomainForm((prev) => ({
+      ...prev,
+      [field]: field === "isDefault" ? !!value : value,
+    }));
+    setSuccess(null);
     setError(null);
   }
 
-  function handleEditDomain(item) {
-    setEditingDomainId(item.id);
-    setDomainForm({
-      id: item.id,
-      domain: item.domain || "",
-      label: item.label || "",
-      isDefault: !!item.isDefault,
-    });
+  function handleIdentityField(field, value) {
+    setIdentityForm((prev) => ({
+      ...prev,
+      [field]:
+        field === "isDefault"
+          ? !!value
+          : field === "senderDomainId" && value
+          ? Number(value)
+          : value,
+    }));
+    setSuccess(null);
     setError(null);
   }
-
-  function formatEmailPreview(form) {
-    const local = (form.localPart || "").trim();
-    const domainId = Number(form.senderDomainId);
-    const domain = domains.find((d) => d.id === domainId);
-    if (!local || !domain) return "";
-    return `${local}@${domain.domain}`;
-  }
-
-  // ------- DOMAINS -------
 
   async function handleSubmitDomain(e) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
 
-    const payload = {
-      domain: (domainForm.domain || "").trim(),
-      label: (domainForm.label || "").trim(),
-      isDefault: !!domainForm.isDefault,
-    };
-
-    if (!payload.domain) {
-      setError("Doména je povinná.");
+    const domainValue = (domainForm.domain || "").trim();
+    if (!domainValue) {
+      setError("Zadejte doménu.");
       return;
     }
 
-    setSavingDomain(true);
     try {
-      if (editingDomainId) {
-        await updateSenderDomain(editingDomainId, payload);
+      let saved;
+      if (domainForm.id) {
+        saved = await updateSenderDomain(domainForm.id, {
+          domain: domainValue,
+          description: domainForm.description || "",
+          isDefault: !!domainForm.isDefault,
+        });
       } else {
-        await createSenderDomain(payload);
+        saved = await createSenderDomain({
+          domain: domainValue,
+          description: domainForm.description || "",
+          isDefault: !!domainForm.isDefault,
+        });
       }
-      await loadAll();
-      resetDomainForm();
+
+      const doms = await listSenderDomains();
+      setDomains(Array.isArray(doms) ? doms : []);
+      setDomainForm({
+        id: saved.id,
+        domain: saved.domain || domainValue,
+        description: saved.description || "",
+        isDefault: !!saved.isDefault,
+      });
+      setSuccess("Doména byla uložena.");
     } catch (e) {
       console.error(e);
-      setError(e.message || "Nepodařilo se uložit doménu");
-    } finally {
-      setSavingDomain(false);
+      setError(e.message || "Nepodařilo se uložit doménu.");
     }
   }
 
-  async function handleDeleteDomain(id) {
-    if (!window.confirm("Opravdu smazat tuto doménu?")) return;
+  async function handleDeleteDomain() {
+    if (!domainForm.id) return;
+    if (!window.confirm("Opravdu chcete tuto doménu smazat?")) return;
+
     setError(null);
+    setSuccess(null);
     try {
-      await deleteSenderDomain(id);
-      await loadAll();
-      if (editingDomainId === id) {
-        resetDomainForm();
-      }
+      await deleteSenderDomain(domainForm.id);
+      const doms = await listSenderDomains();
+      setDomains(Array.isArray(doms) ? doms : []);
+      resetDomainForm();
+      setSuccess("Doména byla smazána.");
     } catch (e) {
       console.error(e);
-      setError(e.message || "Nepodařilo se smazat doménu");
+      setError(e.message || "Nepodařilo se smazat doménu.");
     }
   }
-
-  // ------- IDENTITIES -------
 
   async function handleSubmitIdentity(e) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
+
+    const name = (identityForm.name || "").trim();
+    const localPart = (identityForm.localPart || "").trim();
+    const senderDomainId = identityForm.senderDomainId
+      ? Number(identityForm.senderDomainId)
+      : null;
+
+    if (!name) {
+      setError("Zadejte název identity.");
+      return;
+    }
+    if (!localPart) {
+      setError("Zadejte local-part (část před @).");
+      return;
+    }
+    if (!senderDomainId) {
+      setError("Vyberte doménu pro identitu.");
+      return;
+    }
 
     const payload = {
-      name: (identityForm.name || "").trim(),
-      fromName: (identityForm.fromName || "").trim(),
-      localPart: (identityForm.localPart || "").trim(),
-      senderDomainId: identityForm.senderDomainId
-        ? Number(identityForm.senderDomainId)
-        : null,
-      replyTo: identityForm.replyTo ? identityForm.replyTo.trim() : "",
-      description: identityForm.description
-        ? identityForm.description.trim()
-        : "",
+      name,
+      fromName: identityForm.fromName || "",
+      localPart,
+      senderDomainId,
+      replyTo: identityForm.replyTo || "",
+      note: identityForm.note || "",
       isDefault: !!identityForm.isDefault,
     };
 
-    if (!payload.name || !payload.fromName || !payload.localPart) {
-      setError("Název, jméno odesílatele a local-part jsou povinné.");
-      return;
-    }
-    if (!payload.senderDomainId) {
-      setError("Vyber odesílací doménu.");
-      return;
-    }
-
-    setSavingIdentity(true);
     try {
-      if (editingIdentityId) {
-        await updateSenderIdentity(editingIdentityId, payload);
+      let saved;
+      if (identityForm.id) {
+        saved = await updateSenderIdentity(identityForm.id, payload);
       } else {
-        await createSenderIdentity(payload);
+        saved = await createSenderIdentity(payload);
       }
-      await loadAll();
-      resetIdentityForm();
+
+      const ids = await listSenderIdentities();
+      setIdentities(Array.isArray(ids) ? ids : []);
+
+      setIdentityForm({
+        id: saved.id,
+        name: saved.name || name,
+        fromName: saved.fromName || "",
+        localPart: saved.localPart || localPart,
+        senderDomainId: saved.senderDomainId || senderDomainId,
+        replyTo: saved.replyTo || "",
+        note: saved.note || "",
+        isDefault: !!saved.isDefault,
+      });
+      setSuccess("Odesílací identita byla uložena.");
     } catch (e) {
       console.error(e);
-      setError(e.message || "Nepodařilo se uložit identitu");
-    } finally {
-      setSavingIdentity(false);
+      setError(e.message || "Nepodařilo se uložit identitu.");
     }
   }
 
-  async function handleDeleteIdentity(id) {
-    if (!window.confirm("Opravdu smazat tuto identitu?")) return;
+  async function handleDeleteIdentity() {
+    if (!identityForm.id) return;
+    if (!window.confirm("Opravdu chcete tuto identitu smazat?")) return;
+
     setError(null);
+    setSuccess(null);
     try {
-      await deleteSenderIdentity(id);
-      await loadAll();
-      if (editingIdentityId === id) {
-        resetIdentityForm();
-      }
+      await deleteSenderIdentity(identityForm.id);
+      const ids = await listSenderIdentities();
+      setIdentities(Array.isArray(ids) ? ids : []);
+      resetIdentityForm();
+      setSuccess("Odesílací identita byla smazána.");
     } catch (e) {
       console.error(e);
-      setError(e.message || "Nepodařilo se smazat identitu");
+      setError(e.message || "Nepodařilo se smazat identitu.");
     }
-  }
-
-  function formatIdentityRow(item) {
-    const local = item.localPart;
-    const domain = item.senderDomain?.domain;
-    const email = local && domain ? `${local}@${domain}` : null;
-    if (item.fromName && email) {
-      return `${item.fromName} <${email}>`;
-    }
-    return email || item.fromName || "";
   }
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          Odesílací identity a domény
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <h1 className="text-xl font-semibold text-gray-900">
+          {t("content.senderIdentities.title") ||
+            "Odesílací identity a domény"}
         </h1>
-        <p className="text-gray-600 text-sm max-w-2xl">
-          Nejprve přidej odesílací domény (např. phish.firma.cz), následně pro
-          ně definuj identity s konkrétním local-partem (před zavináčem).
+        <p className="mt-1 text-xs text-gray-600 max-w-2xl">
+          Nejprve přidej odesílací domény (např. phish.firma.cz), následně
+          pro ně definuj identity s konkrétním local-partem (před
+          zavináčem).
         </p>
-      </header>
+      </div>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
+      {success && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {success}
+        </div>
+      )}
 
-      {/* Domény */}
-      <div className="grid gap-6 lg:grid-cols-[1.1fr,1fr]">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold text-gray-900">
-            Odesílací domény
-          </h2>
-          <form className="space-y-4" onSubmit={handleSubmitDomain}>
-            <div className="grid gap-3 md:grid-cols-2">
+      {/* DOMÉNY */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Odesílací domény
+            </h2>
+            <p className="mt-1 text-xs text-gray-500 max-w-xl">
+              Doména určuje část za zavináčem (např. phish.firma.cz). Můžeš
+              mít více domén pro různé zákazníky nebo scénáře.
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <input
+              type="text"
+              value={domainSearch}
+              onChange={(e) => setDomainSearch(e.target.value)}
+              placeholder="Filtrovat podle domény nebo popisu…"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr),minmax(0,1.4fr)]">
+          {/* formulář domény */}
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
+            <form className="space-y-3" onSubmit={handleSubmitDomain}>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <label className="mb-1 block text-[11px] font-medium text-gray-700">
                   Doména
                 </label>
                 <input
                   type="text"
                   value={domainForm.domain}
-                  onChange={(e) => setDomainField("domain", e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  onChange={(e) =>
+                    handleDomainField("domain", e.target.value)
+                  }
                   placeholder="např. phish.firma.cz"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
                 />
               </div>
+
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <label className="mb-1 block text-[11px] font-medium text-gray-700">
                   Popisek (volitelný)
                 </label>
                 <input
                   type="text"
-                  value={domainForm.label}
-                  onChange={(e) => setDomainField("label", e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  value={domainForm.description}
+                  onChange={(e) =>
+                    handleDomainField("description", e.target.value)
+                  }
                   placeholder="např. doména pro HR kampaně"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
                 />
               </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs text-gray-700">
+              <label className="flex items-center gap-2 text-[11px] text-gray-700">
                 <input
                   type="checkbox"
                   checked={!!domainForm.isDefault}
                   onChange={(e) =>
-                    setDomainField("isDefault", e.target.checked)
+                    handleDomainField("isDefault", e.target.checked)
                   }
                 />
                 Nastavit jako výchozí doménu
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={resetDomainForm}
-                  className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  Nová doména
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingDomain}
-                  className="rounded-md bg-[var(--brand-strong)] px-4 py-1 text-xs font-medium text-white disabled:opacity-60"
-                >
-                  {editingDomainId ? "Uložit doménu" : "Přidat doménu"}
-                </button>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
+                  >
+                    {domainForm.id ? "Uložit doménu" : "Přidat doménu"}
+                  </button>
+                  {domainForm.id && (
+                    <button
+                      type="button"
+                      onClick={resetDomainForm}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] text-gray-700 hover:bg-gray-50"
+                    >
+                      Zrušit úpravy
+                    </button>
+                  )}
+                </div>
+                {domainForm.id && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteDomain}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50"
+                  >
+                    Smazat
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* seznam domén */}
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="font-medium text-gray-800">Seznam domén</div>
+              <div className="text-[11px] text-gray-500">
+                {filteredDomains.length} / {domains.length}
               </div>
             </div>
-          </form>
-        </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">
-              Seznam domén
-            </h3>
-            {loading && (
-              <span className="text-xs text-gray-500">Načítání…</span>
-            )}
-          </div>
-          {domains.length === 0 ? (
-            <div className="text-sm text-gray-500">
-              Zatím žádné domény. Přidej první vlevo.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Doména
-                    </th>
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Popis
-                    </th>
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Výchozí
-                    </th>
-                    <th className="p-2 text-right font-medium text-gray-700">
-                      Akce
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {domains.map((d) => (
-                    <tr key={d.id} className="border-b last:border-b-0">
-                      <td className="p-2 align-top font-medium text-gray-900">
+            <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+              {filteredDomains.length === 0 ? (
+                <div className="py-6 text-center text-[11px] text-gray-400">
+                  Zatím nemáte žádné domény.
+                </div>
+              ) : (
+                filteredDomains.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() =>
+                      setDomainForm({
+                        id: d.id,
+                        domain: d.domain || "",
+                        description: d.description || "",
+                        isDefault: !!d.isDefault,
+                      })
+                    }
+                    className={
+                      "flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-gray-50 " +
+                      (domainForm.id === d.id
+                        ? "bg-[var(--brand-soft)]"
+                        : "")
+                    }
+                  >
+                    <div>
+                      <div className="text-xs font-medium text-gray-900">
                         {d.domain}
-                      </td>
-                      <td className="p-2 align-top text-[11px] text-gray-600">
-                        {d.label || <span className="text-gray-400">-</span>}
-                      </td>
-                      <td className="p-2 align-top">
-                        {d.isDefault ? (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">
-                            výchozí
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="p-2 align-top text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditDomain(d)}
-                          className="text-[11px] text-[var(--brand-strong)] hover:underline"
-                        >
-                          Upravit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDomain(d.id)}
-                          className="text-[11px] text-red-600 hover:underline"
-                        >
-                          Smazat
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                      {d.description && (
+                        <div className="text-[11px] text-gray-500">
+                          {d.description}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right text-[11px] text-gray-500">
+                      {d.isDefault ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                          Výchozí
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">
+                          –
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Identity */}
-      <div className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold text-gray-900">
-            Odesílací identity
-          </h2>
-          <form className="space-y-4" onSubmit={handleSubmitIdentity}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Název identity
-                </label>
-                <input
-                  type="text"
-                  value={identityForm.name}
-                  onChange={(e) => setIdentityField("name", e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  placeholder="Např. HR newsletter"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Jméno odesílatele
-                </label>
-                <input
-                  type="text"
-                  value={identityForm.fromName}
-                  onChange={(e) =>
-                    setIdentityField("fromName", e.target.value)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  placeholder="Např. HR oddělení"
-                />
-              </div>
-            </div>
+      {/* IDENTITY */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Odesílací identity
+            </h2>
+            <p className="mt-1 text-xs text-gray-500 max-w-xl">
+              Identity kombinují jméno odesílatele, local-part a doménu do
+              finální adresy, ze které budou chodit e-maily kampaní.
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <input
+              type="text"
+              value={identitySearch}
+              onChange={(e) => setIdentitySearch(e.target.value)}
+              placeholder="Filtrovat podle názvu, adresy nebo domény…"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+            />
+          </div>
+        </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Local-part (před @)
-                </label>
-                <input
-                  type="text"
-                  value={identityForm.localPart}
-                  onChange={(e) =>
-                    setIdentityField("localPart", e.target.value)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  placeholder="např. hr"
-                />
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr),minmax(0,1.6fr)]">
+          {/* formulář identity */}
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
+            <form className="space-y-3" onSubmit={handleSubmitIdentity}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Název identity
+                  </label>
+                  <input
+                    type="text"
+                    value={identityForm.name}
+                    onChange={(e) =>
+                      handleIdentityField("name", e.target.value)
+                    }
+                    placeholder="Např. HR newsletter"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Jméno odesílatele
+                  </label>
+                  <input
+                    type="text"
+                    value={identityForm.fromName}
+                    onChange={(e) =>
+                      handleIdentityField("fromName", e.target.value)
+                    }
+                    placeholder="Např. HR oddělení"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Doména
-                </label>
-                <select
-                  value={identityForm.senderDomainId}
-                  onChange={(e) =>
-                    setIdentityField("senderDomainId", e.target.value)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                >
-                  <option value="">– vyber doménu –</option>
-                  {domains.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.domain}
-                      {d.isDefault ? " (výchozí)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col justify-end">
-                <span className="text-[11px] text-gray-500">
-                  Výsledný e-mail:
-                </span>
-                <span className="text-xs font-medium text-gray-900">
-                  {formatEmailPreview(identityForm) || "-"}
-                </span>
-              </div>
-            </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Reply-To (volitelné)
-                </label>
-                <input
-                  type="email"
-                  value={identityForm.replyTo}
-                  onChange={(e) =>
-                    setIdentityField("replyTo", e.target.value)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  placeholder="kam mají přijít odpovědi"
-                />
+              <div className="grid gap-3 md:grid-cols-[1.2fr,1.2fr]">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Local-part (před @)
+                  </label>
+                  <input
+                    type="text"
+                    value={identityForm.localPart}
+                    onChange={(e) =>
+                      handleIdentityField("localPart", e.target.value)
+                    }
+                    placeholder="např. hr"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Doména
+                  </label>
+                  <select
+                    value={identityForm.senderDomainId || ""}
+                    onChange={(e) =>
+                      handleIdentityField("senderDomainId", e.target.value)
+                    }
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  >
+                    <option value="">– vyber doménu –</option>
+                    {domains.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.domain}
+                        {d.isDefault ? " (výchozí)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Popis / poznámka
-                </label>
-                <input
-                  type="text"
-                  value={identityForm.description}
-                  onChange={(e) =>
-                    setIdentityField("description", e.target.value)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  placeholder="Interní poznámka"
-                />
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs text-gray-700">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Reply-To (volitelné)
+                  </label>
+                  <input
+                    type="email"
+                    value={identityForm.replyTo}
+                    onChange={(e) =>
+                      handleIdentityField("replyTo", e.target.value)
+                    }
+                    placeholder="kam mají přijít odpovědi"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Popis / poznámka
+                  </label>
+                  <input
+                    type="text"
+                    value={identityForm.note}
+                    onChange={(e) =>
+                      handleIdentityField("note", e.target.value)
+                    }
+                    placeholder="Interní poznámka"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-[11px] text-gray-700">
                 <input
                   type="checkbox"
                   checked={!!identityForm.isDefault}
                   onChange={(e) =>
-                    setIdentityField("isDefault", e.target.checked)
+                    handleIdentityField("isDefault", e.target.checked)
                   }
                 />
                 Nastavit jako výchozí identitu pro tenant
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={resetIdentityForm}
-                  className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  Nová identita
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingIdentity}
-                  className="rounded-md bg-[var(--brand-strong)] px-4 py-1 text-xs font-medium text-white disabled:opacity-60"
-                >
-                  {editingIdentityId ? "Uložit změny" : "Přidat identitu"}
-                </button>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
+                  >
+                    {identityForm.id
+                      ? "Uložit identitu"
+                      : "Přidat identitu"}
+                  </button>
+                  {identityForm.id && (
+                    <button
+                      type="button"
+                      onClick={resetIdentityForm}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] text-gray-700 hover:bg-gray-50"
+                    >
+                      Zrušit úpravy
+                    </button>
+                  )}
+                </div>
+                {identityForm.id && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteIdentity}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50"
+                  >
+                    Smazat
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* seznam identit */}
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="font-medium text-gray-800">
+                Seznam odesílacích identit
+              </div>
+              <div className="text-[11px] text-gray-500">
+                {filteredIdentities.length} / {identities.length}
               </div>
             </div>
-          </form>
-        </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">
-              Seznam odesílacích identit
-            </h3>
-            {loading && (
-              <span className="text-xs text-gray-500">Načítání…</span>
-            )}
-          </div>
-          {identities.length === 0 ? (
-            <div className="text-sm text-gray-500">
-              Zatím žádné identity. Přidej první vlevo.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Název
-                    </th>
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Odesílatel
-                    </th>
-                    <th className="p-2 text-left font-medium text-gray-700">
-                      Výchozí
-                    </th>
-                    <th className="p-2 text-right font-medium text-gray-700">
-                      Akce
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {identities.map((item) => (
-                    <tr key={item.id} className="border-b last:border-b-0">
-                      <td className="p-2 align-top">
-                        <div className="font-medium text-gray-900">
-                          {item.name}
+            <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+              {filteredIdentities.length === 0 ? (
+                <div className="py-6 text-center text-[11px] text-gray-400">
+                  Zatím nemáte žádné identity. Nejprve vytvoř doménu a poté
+                  identitu.
+                </div>
+              ) : (
+                filteredIdentities.map((i) => (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() =>
+                      setIdentityForm({
+                        id: i.id,
+                        name: i.name || "",
+                        fromName: i.fromName || "",
+                        localPart: i.localPart || "",
+                        senderDomainId:
+                          i.senderDomainId || i.senderDomain?.id || "",
+                        replyTo: i.replyTo || "",
+                        note: i.note || "",
+                        isDefault: !!i.isDefault,
+                      })
+                    }
+                    className={
+                      "flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-gray-50 " +
+                      (identityForm.id === i.id
+                        ? "bg-[var(--brand-soft)]"
+                        : "")
+                    }
+                  >
+                    <div>
+                      <div className="text-xs font-medium text-gray-900">
+                        {i.name || "(bez názvu)"}
+                      </div>
+                      <div className="text-[11px] text-gray-600">
+                        {formatSender(i) || "—"}
+                      </div>
+                      {i.note && (
+                        <div className="text-[11px] text-gray-500">
+                          {i.note}
                         </div>
-                        {item.description && (
-                          <div className="mt-0.5 text-[11px] text-gray-500">
-                            {item.description}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-2 align-top">
-                        {formatIdentityRow(item)}
-                      </td>
-                      <td className="p-2 align-top">
-                        {item.isDefault ? (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">
-                            výchozí
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="p-2 align-top text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditIdentity(item)}
-                          className="text-[11px] text-[var(--brand-strong)] hover:underline"
-                        >
-                          Upravit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteIdentity(item.id)}
-                          className="text-[11px] text-red-600 hover:underline"
-                        >
-                          Smazat
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      )}
+                    </div>
+                    <div className="text-right text-[11px] text-gray-500">
+                      {i.isDefault ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                          Výchozí
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">
+                          –
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

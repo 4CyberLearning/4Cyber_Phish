@@ -17,25 +17,20 @@ async function request(path, options = {}) {
       },
       ...options,
     });
-  } catch (err) {
-    console.error("Network error while calling API", err);
-    throw new Error("Network error while calling API");
+  } catch (e) {
+    console.error("Network error", e);
+    throw new Error("Network error");
   }
 
-  let data = null;
-  try {
-    if (res.status !== 204) {
-      data = await res.json();
-    }
-  } catch {
-    // ignore JSON parse error
-  }
+  const isJson =
+    res.headers.get("content-type")?.includes("application/json");
+  const data = isJson ? await res.json() : await res.text();
 
   if (!res.ok) {
-    const msg =
+    const message =
       (data && data.error) ||
-      `API error ${res.status} ${res.statusText || ""}`.trim();
-    throw new Error(msg);
+      (typeof data === "string" ? data : "Request failed");
+    throw new Error(message);
   }
 
   return data;
@@ -61,8 +56,4 @@ export function sendCampaignNow(id) {
     method: "POST",
     body: JSON.stringify({}),
   });
-}
-
-export function getCampaignReport(id) {
-  return request(`/api/campaigns/${id}/report`);
 }
