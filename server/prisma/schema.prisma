@@ -7,7 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/* ========= ENUMS ========= */
+/**
+ * ========= ENUMS =========
+ */
 
 enum CampaignStatus {
   SCHEDULED
@@ -30,13 +32,15 @@ enum TrainingStatus {
   FAILED
 }
 
-/* ========= TENANT ========= */
+/**
+ * ========= TENANT =========
+ */
 
 model Tenant {
-  id           Int             @id @default(autoincrement())
-  name         String
-  slug         String          @unique
-  createdAt    DateTime        @default(now())
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
 
   users            User[]
   groups           Group[]
@@ -51,9 +55,9 @@ model Tenant {
 }
 
 model SenderDomain {
-  id        Int      @id @default(autoincrement())
-  tenantId  Int
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   domain    String
   label     String?
@@ -65,36 +69,39 @@ model SenderDomain {
   @@unique([tenantId, domain])
 }
 
-/* ========= USERS / GROUPS ========= */
+/**
+ * ========= USERS / GROUPS =========
+ */
 
 model User {
-  id          Int            @id @default(autoincrement())
-  tenantId    Int
-  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  email       String         @unique
-  fullName    String?
-  department  String?
-  role        String?
-  isAdmin     Boolean        @default(false)
-  riskScore   Float          @default(0.0)
-  createdAt   DateTime       @default(now())
+  email        String   @unique
+  passwordHash String?
+  fullName     String?
+  department   String?
+  role         String?
+  isAdmin      Boolean  @default(false)
+  riskScore    Float    @default(0.0)
+  createdAt    DateTime @default(now())
 
   // relations
-  groupLinks  GroupMember[]
-  interactions Interaction[]
-  trainings   UserTraining[]
+  groupLinks    GroupMember[]
+  interactions  Interaction[]
+  trainings     UserTraining[]
   campaignLinks CampaignUser[]
-  auditLogs   AuditLog[]
+  auditLogs     AuditLog[]
 }
 
 model Group {
-  id        Int          @id @default(autoincrement())
-  tenantId  Int
-  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name      String
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
 
-  members   GroupMember[]
+  members GroupMember[]
 
   @@unique([tenantId, name])
 }
@@ -104,37 +111,39 @@ model GroupMember {
   groupId  Int
   joinedAt DateTime @default(now())
 
-  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group  Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([userId, groupId])
 }
 
-/* ========= CONTENT (TEMPLATES / LP) ========= */
+/**
+ * ========= CONTENT (TEMPLATES / LP) =========
+ */
 
 model EmailTemplate {
-  id         Int       @id @default(autoincrement())
-  tenantId   Int
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name       String
   subject    String
   bodyHtml   String
   tags       String[]
-  difficulty Int       @default(1)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  difficulty Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // back-relations
-  campaigns  Campaign[]
+  campaigns Campaign[]
 
   @@unique([tenantId, name])
 }
 
 model SenderIdentity {
-  id        Int      @id @default(autoincrement())
-  tenantId  Int
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name        String
   fromName    String
@@ -147,61 +156,63 @@ model SenderIdentity {
   senderDomainId Int
   senderDomain   SenderDomain @relation(fields: [senderDomainId], references: [id], onDelete: Cascade)
 
-  campaigns   Campaign[]
+  campaigns Campaign[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, senderDomainId, localPart])
 }
 
 model LandingPage {
-  id         Int       @id @default(autoincrement())
-  tenantId   Int
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name       String
-  urlSlug    String    @unique
-  html       String
-  tags       String[]
-  createdAt  DateTime  @default(now())
+  name      String
+  urlSlug   String   @unique
+  html      String
+  tags      String[]
+  createdAt DateTime @default(now())
 
   // back-relations
-  campaigns  Campaign[]
+  campaigns Campaign[]
 }
 
-/* ========= CAMPAIGNS & TRACKING ========= */
+/**
+ * ========= CAMPAIGNS & TRACKING =========
+ */
 
 model Campaign {
-  id             Int            @id @default(autoincrement())
-  tenantId       Int
-  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name           String
-  description    String?
-  scheduledAt    DateTime
-  status         CampaignStatus @default(SCHEDULED)
+  name        String
+  description String?
+  scheduledAt DateTime
+  status      CampaignStatus @default(SCHEDULED)
 
   emailTemplateId Int
-  emailTemplate   EmailTemplate  @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)
+  emailTemplate   EmailTemplate @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)
 
-  landingPageId   Int
-  landingPage     LandingPage    @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
+  landingPageId Int
+  landingPage   LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
 
   senderIdentityId Int?
   senderIdentity   SenderIdentity? @relation(fields: [senderIdentityId], references: [id], onDelete: SetNull)
 
-  targetUsers    CampaignUser[]
-  interactions   Interaction[]
-  createdAt      DateTime @default(now())
+  targetUsers  CampaignUser[]
+  interactions Interaction[]
+  createdAt    DateTime       @default(now())
 }
 
 model CampaignUser {
-  id         Int      @id @default(autoincrement())
+  id         Int     @id @default(autoincrement())
   campaignId Int
   userId     Int
-  delivered  Boolean  @default(false)
+  delivered  Boolean @default(false)
 
   // unikátní token pro trackování kliků / openů v rámci této kampaně
-  trackingToken String  @unique @default(uuid())
+  trackingToken String @unique @default(uuid())
 
   // agregovaná data pro reporting (rychlé tabulky "Users" per kampaň)
   sentAt      DateTime?
@@ -210,8 +221,8 @@ model CampaignUser {
   submittedAt DateTime?
   reportedAt  DateTime?
 
-  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign     Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions Interaction[]
 
   @@unique([campaignId, userId])
@@ -231,17 +242,19 @@ model Interaction {
   campaignUser CampaignUser @relation(fields: [campaignUserId], references: [id], onDelete: Cascade)
 }
 
-/* ========= TRAINING ========= */
+/**
+ * ========= TRAINING =========
+ */
 
 model TrainingModule {
-  id          Int           @id @default(autoincrement())
-  tenantId    Int
-  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name        String
-  url         String      // video/scorm link
+  url         String // video/scorm link
   description String?
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime @default(now())
 
   assignments UserTraining[]
 }
@@ -254,34 +267,36 @@ model UserTraining {
   assignedAt  DateTime       @default(now())
   completedAt DateTime?
 
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  training    TrainingModule @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  training TrainingModule @relation(fields: [trainingId], references: [id], onDelete: Cascade)
 
   @@unique([userId, trainingId])
 }
 
-/* ========= AUDIT ========= */
+/**
+ * ========= AUDIT =========
+ */
 
 model AuditLog {
-  id         Int       @id @default(autoincrement())
-  tenantId   Int
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  userId     Int?
-  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  action     String
-  entity     String?
-  entityId   Int?
-  timestamp  DateTime  @default(now())
+  action    String
+  entity    String?
+  entityId  Int?
+  timestamp DateTime @default(now())
 
   @@index([tenantId, timestamp])
 }
 
 model Asset {
-  id        Int      @id @default(autoincrement())
-  tenantId  Int
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   fileName  String
   url       String   @unique

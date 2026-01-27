@@ -1,8 +1,8 @@
 // server/routes/templates.js
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../db/prisma.js";
+import { sendMail } from "../utils/mailer.js";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // Prozatím používáme jediného tenanta "demo"
@@ -202,12 +202,26 @@ router.delete("/:id", async (req, res) => {
 // POST /api/templates/:id/send-test – zatím jen stub
 router.post("/:id/send-test", async (req, res) => {
   try {
+    const id = Number(req.params.id);
     const { to } = req.body || {};
-    if (!to) {
-      return res.status(400).json({ error: "Missing test email address" });
-    }
 
-    // TODO: napojit na utils/mailer.js / MailHog
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+    if (!to) return res.status(400).json({ error: "Missing test email address" });
+
+    const tenantId = await getTenantId();
+
+    const template = await prisma.emailTemplate.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!template) return res.status(404).json({ error: "Template not found" });
+
+    await sendMail({
+      to,
+      subject: template.subject,
+      html: template.bodyHtml,
+    });
+
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/templates/:id/send-test error", err);

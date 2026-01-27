@@ -9,12 +9,17 @@ const {
   SMTP_FROM = '4Cyber Phish <no-reply@dev.local>',
 } = process.env;
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT),
-  secure: SMTP_SECURE === 'true', // dev=false (MailHog), prod=true (465) / false (587)
-  auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
-});
+  const port = Number(SMTP_PORT);
+  const secure = SMTP_SECURE === "true";
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port,
+    secure, // 465=true, 587=false
+    requireTLS: !secure && port === 587, // Office365: vynutit STARTTLS
+    auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
+    tls: { minVersion: "TLSv1.2" },
+  });
 
 export async function sendMail({ to, subject, html, from, replyTo }) {
   const info = await transporter.sendMail({

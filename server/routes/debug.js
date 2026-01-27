@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../db/prisma.js";
 import { sendMail, verifySmtp } from "../utils/mailer.js";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // musí být přihlášen

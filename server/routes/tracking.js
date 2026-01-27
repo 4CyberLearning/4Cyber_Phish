@@ -1,8 +1,8 @@
 // server/routes/tracking.js
 import { Router } from "express";
 import { PrismaClient, InteractionType } from "@prisma/client";
+import prisma from "../db/prisma.js";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // základ pro veřejný web (landing stránky)

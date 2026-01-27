@@ -1,8 +1,7 @@
 // server/routes/users.js
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../db/prisma.js";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // stejně jako u šablon: jeden demo tenant

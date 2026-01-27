@@ -4,9 +4,8 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../db/prisma.js";
 
-const prisma = new PrismaClient();
 const router = express.Router();
 
 // DEV: jeden tenant napevno (id = 1)

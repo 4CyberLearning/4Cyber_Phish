@@ -1,29 +1,43 @@
-import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
-const router = Router();
+import { Router } from "express"
+import { PrismaClient } from "@prisma/client"
+import bcrypt from "bcryptjs"
 
-router.post('/auth/login', async (req, res) => {
-  const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: 'Email required' });
+const prisma = new PrismaClient()
+const router = Router()
 
-  const tenant = await prisma.tenant.findUnique({ where: { slug: 'demo' }});
-  const user = await prisma.user.findFirst({ where: { email, tenantId: tenant.id }});
-  if (!user) return res.status(401).json({ error: 'Unknown user' });
+// POZOR: mountuješ to jako app.use("/api/auth", authRouter)
+// takže tady musí být jen "/login", ne "/auth/login"
+router.post("/login", async (req, res) => {
+  const { email, password } = req.body || {}
+  if (!email || !password) return res.status(400).json({ error: "Email and password required" })
 
-  req.session.userId = user.id;
-  req.session.tenantId = tenant.id;
-  res.json({ user: { id: user.id, email: user.email, fullName: user.fullName, isAdmin: user.isAdmin }});
-});
+  const tenant = await prisma.tenant.findUnique({ where: { slug: "demo" } })
+  if (!tenant) return res.status(500).json({ error: "Tenant not found" })
 
-router.post('/auth/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
-});
+  const user = await prisma.user.findFirst({ where: { email, tenantId: tenant.id } })
+  if (!user) return res.status(401).json({ error: "Invalid credentials" })
+  if (!user.isAdmin) return res.status(403).json({ error: "Forbidden" })
+  if (!user.passwordHash) return res.status(401).json({ error: "Invalid credentials" })
 
-router.get('/auth/me', async (req, res) => {
-  if (!req.session?.userId) return res.status(401).json({ error: 'Not logged in' });
+  const ok = await bcrypt.compare(password, user.passwordHash)
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" })
+
+  req.session.userId = user.id
+  req.session.tenantId = tenant.id
+
+  return res.json({
+    user: { id: user.id, email: user.email, fullName: user.fullName, isAdmin: user.isAdmin },
+  })
+})
+
+router.post("/logout", (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }))
+})
+
+router.get("/me", async (req, res) => {
+  if (!req.session?.userId) return res.status(401).json({ error: "Not logged in" });
   const user = await prisma.user.findUnique({ where: { id: req.session.userId } });
   res.json({ user });
 });
 
-export default router;
+export default router
