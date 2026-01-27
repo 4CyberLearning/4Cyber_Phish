@@ -12,12 +12,12 @@ async function main() {
   const admins = [
     {
       email: process.env.ADMIN1_EMAIL || 'dpirkl@4cyber.cz',
-      password: process.env.ADMIN1_PASSWORD || 'CHANGE_ME_1',
+      password: process.env.ADMIN1_PASSWORD || '3Cq2U!rtY4Vhz&B3Jcp^Q0svN0ar*c2',
       fullName: process.env.ADMIN1_NAME || 'Admin DP',
     },
     {
       email: process.env.ADMIN2_EMAIL || 'jjancar@4cyber.cz',
-      password: process.env.ADMIN2_PASSWORD || 'CHANGE_ME_2',
+      password: process.env.ADMIN2_PASSWORD || 'ww92f2MebJ2!X@YHv&XStMPdh6PhnN08',
       fullName: process.env.ADMIN2_NAME || 'Admin JJ',
     },
   ]
