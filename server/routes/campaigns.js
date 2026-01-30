@@ -93,6 +93,125 @@ router.get('/campaigns/:id', async (req, res) => {
   }
 });
 
+// PATCH /api/campaigns/:id – průběžná konfigurace kampaně (wizard)
+router.patch("/campaigns/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  try {
+    const tenantId = await getTenantId();
+
+    const existing = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Campaign not found" });
+
+    const body = req.body || {};
+    const data = {};
+
+    if (body.name !== undefined) {
+      const v = String(body.name || "").trim();
+      if (!v) return res.status(400).json({ error: "Name is required" });
+      data.name = v;
+    }
+
+    if (body.description !== undefined) {
+      const v = String(body.description || "").trim();
+      data.description = v ? v : null;
+    }
+
+    if (body.scheduledAt !== undefined) {
+      const d = body.scheduledAt ? new Date(body.scheduledAt) : null;
+      if (d && Number.isNaN(d.getTime())) {
+        return res.status(400).json({ error: "Invalid scheduledAt" });
+      }
+      if (d) data.scheduledAt = d;
+    }
+
+    if (body.landingPageId !== undefined) {
+      const v = Number(body.landingPageId);
+      if (!Number.isInteger(v)) {
+        return res.status(400).json({ error: "Invalid landingPageId" });
+      }
+      data.landingPageId = v;
+    }
+
+    if (body.emailTemplateId !== undefined) {
+      const v = Number(body.emailTemplateId);
+      if (!Number.isInteger(v)) {
+        return res.status(400).json({ error: "Invalid emailTemplateId" });
+      }
+      data.emailTemplateId = v;
+    }
+
+    if (body.senderIdentityId !== undefined) {
+      if (body.senderIdentityId === null || body.senderIdentityId === "") {
+        data.senderIdentityId = null;
+      } else {
+        const v = Number(body.senderIdentityId);
+        if (!Number.isInteger(v)) {
+          return res.status(400).json({ error: "Invalid senderIdentityId" });
+        }
+        data.senderIdentityId = v;
+      }
+    }
+
+    // volitelné: přepsání příjemců (krok 4)
+    if (body.userIds !== undefined) {
+      if (!Array.isArray(body.userIds)) {
+        return res.status(400).json({ error: "userIds must be an array" });
+      }
+      const userIds = body.userIds
+        .map((x) => Number(x))
+        .filter((x) => Number.isInteger(x) && x > 0);
+
+      data.targetUsers = {
+        deleteMany: {},
+        create: userIds.map((uid) => ({ userId: uid })),
+      };
+    }
+
+    // když není co měnit, vrať detail
+    if (Object.keys(data).length === 0) {
+      const row = await prisma.campaign.findFirst({
+        where: { id, tenantId },
+        include: {
+          emailTemplate: true,
+          landingPage: true,
+          senderIdentity: { include: { senderDomain: true } },
+          targetUsers: { include: { user: true } },
+          interactions: true,
+        },
+      });
+      return res.json(row);
+    }
+
+    await prisma.campaign.update({
+      where: { id },
+      data,
+    });
+
+    const row = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      include: {
+        emailTemplate: true,
+        landingPage: true,
+        senderIdentity: { include: { senderDomain: true } },
+        targetUsers: { include: { user: true } },
+        interactions: true,
+      },
+    });
+
+    res.json(row);
+  } catch (e) {
+    console.error("PATCH /campaigns/:id failed", e);
+    res.status(500).json({ error: e.message || "Failed to update campaign" });
+  }
+});
+
 // POST /api/campaigns – vytvoření kampaně
 router.post('/campaigns', async (req, res) => {
   const {

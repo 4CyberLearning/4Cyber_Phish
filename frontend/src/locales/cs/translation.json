@@ -106,7 +106,6 @@
 
   "nav": {
     "dashboard": "Dashboard",
-
     "playbook": {
       "title": "Návod"
     },
@@ -115,7 +114,8 @@
       "title": "Obsah",
       "emailTemplates": "E-mailové šablony",
       "landingPages": "Landing pages",
-      "assets": "Assety / soubory"
+      "assets": "Assety / soubory",
+      "senderIdentities": "domény a odesílatelé"
     },
 
     "campaign": {

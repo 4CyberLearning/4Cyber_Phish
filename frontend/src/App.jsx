@@ -16,6 +16,7 @@ import CampaignCreate from "./pages/CampaignCreate";
 import CampaignDetail from "./pages/CampaignDetail";
 import AssetsPage from "./pages/Content/Assets";
 import { apiUrl } from "./api/base";
+import { RouteTransitionProvider } from "./transition/RouteTransition";
 
 export default function App() {
   // undefined = loading, null = not logged, object = logged
@@ -64,7 +65,7 @@ export default function App() {
         />
 
         {/* Protected app */}
-        <Route element={<RequireAuth user={user}><AppLayout /></RequireAuth>}>
+        <Route element={<RequireAuth user={user}><RouteTransitionProvider><AppLayout /></RouteTransitionProvider></RequireAuth>}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/content" element={<ContentPage />} />

@@ -9,6 +9,7 @@ import {
 } from "../../api/landingPages";
 import AssetPickerModal from "../../components/AssetPickerModal";
 import { LANDING_PAGES_HELP } from "./landingPagesHelpContent";
+import { updateCampaign } from "../../api/campaigns";
 
 const EMPTY_PAGE = {
   id: null,
@@ -183,6 +184,34 @@ export default function LandingPagesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [previewState, setPreviewState] = useState({ open: false, title: "", html: "" });
   const [helpOpen, setHelpOpen] = useState(false);
+  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+  const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
+
+  const [applyingCampaign, setApplyingCampaign] = useState(false);
+
+  async function applyToCampaign(page) {
+    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
+    if (!campaignId) {
+      window.alert("Nejdřív vyber kampaň v horním panelu.");
+      return;
+    }
+
+    setApplyingCampaign(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await updateCampaign(Number(campaignId), { landingPageId: Number(page.id) });
+      window.dispatchEvent(
+        new CustomEvent(CAMPAIGN_UPDATED_EVENT, { detail: { id: String(campaignId), step: "landing" } })
+      );
+      setSuccess("Landing page byla nastavena pro vybranou kampaň.");
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se nastavit landing page pro kampaň");
+    } finally {
+      setApplyingCampaign(false);
+    }
+  }
 
   function insertIntoHtmlAtCursor(snippet) {
     const el = htmlRef.current;
@@ -622,7 +651,7 @@ export default function LandingPagesPage() {
                     </div>
                   )}
 
-                  <div className="mt-auto grid grid-cols-3 gap-2 pt-2">
+                  <div className="mt-auto grid grid-cols-4 gap-2 pt-2">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -656,6 +685,17 @@ export default function LandingPagesPage() {
                     >
                       {t("common.delete") || "Smazat"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        applyToCampaign(page);
+                      }}
+                      disabled={applyingCampaign}
+                      className="rounded-md border border-slate-200/70 bg-white/20 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                    >
+                      Do kampaně
+                    </button>                    
                   </div>
                 </div>
               ))}

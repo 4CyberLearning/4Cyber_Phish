@@ -16,7 +16,7 @@ export const nav = [
   {
     key: "nav.content.title",     // label nadpisu "Obsah"
     iconName: "content",
-    overview: "/content",
+    overview: "/content/email-templates",
     children: [
       {
         key: "nav.content.emailTemplates",    // E-mailové šablony
@@ -41,15 +41,15 @@ export const nav = [
     iconName: "campaign",
     overview: "/campaigns",
     children: [
+      { key: "nav.campaign.list",       to: "/campaigns" },
       { key: "nav.campaign.new",        to: "/campaigns/new" },
-      { key: "nav.campaign.list",       to: "/campaigns/list" },
       { key: "nav.campaign.aftercare",  to: "/campaigns/aftercare" },
     ],
   },
   {
     key: "nav.recipients.title",
     iconName: "users",
-    overview: "/recipients",
+    overview: "/users",
     children: [
       { key: "nav.recipients.upload", to: "/users", },
       { key: "nav.recipients.groups", to: "/users", },

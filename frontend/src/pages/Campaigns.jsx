@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { listCampaigns, sendCampaignNow } from "../api/campaigns";
+import { useRouteTransition } from "../transition/RouteTransition";
+import { listCampaigns } from "../api/campaigns";
 
 export default function Campaigns() {
-  const navigate = useNavigate();
-
+  const { start } = useRouteTransition();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState(null);
@@ -70,6 +69,16 @@ export default function Campaigns() {
       return haystack.includes(q);
     });
   }, [campaigns, statusFilter, search]);
+
+  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+  const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
+
+  function handleManage(id) {
+    const strId = String(id);
+    localStorage.setItem(SELECTED_CAMPAIGN_KEY, strId);
+    window.dispatchEvent(new CustomEvent(CAMPAIGN_SELECTED_EVENT, { detail: { id: strId } }));
+    start(`/campaigns/${id}`);
+  }
 
   async function handleSendNow(id) {
     setError(null);
@@ -290,29 +299,13 @@ export default function Campaigns() {
                         </span>
                       </td>
                       <td className="p-2 align-top text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end">
                           <button
                             type="button"
-                            onClick={() => navigate(`/campaigns/${c.id}`)}
-                            className="rounded-md border border-gray-300 px-3 py-1 text-[11px] text-gray-700 hover:bg-gray-50"
+                            onClick={() => handleManage(c.id)}
+                            className="rounded-md border border-[var(--brand-strong)] px-3 py-1 text-[11px] font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)]"
                           >
-                            Detail
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSendTest(c.id)}
-                            disabled={testingId === c.id}
-                            className="rounded-md border border-gray-300 px-3 py-1 text-[11px] text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                          >
-                            {testingId === c.id ? "Posílám…" : "Poslat test"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSendNow(c.id)}
-                            disabled={sendingId === c.id}
-                            className="rounded-md border border-[var(--brand-strong)] px-3 py-1 text-[11px] font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
-                          >
-                            {sendingId === c.id ? "Odesílám…" : "Odeslat teď"}
+                            Spravovat
                           </button>
                         </div>
                       </td>

@@ -12,6 +12,7 @@ import {
   updateSenderIdentity,
   deleteSenderIdentity,
 } from "../../api/senderIdentities";
+import { updateCampaign } from "../../api/campaigns";
 
 const EMPTY_DOMAIN = {
   id: null,
@@ -57,6 +58,45 @@ export default function SenderIdentitiesPage() {
 
   const [domainSearch, setDomainSearch] = useState("");
   const [identitySearch, setIdentitySearch] = useState("");
+  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+  const [applyingCampaign, setApplyingCampaign] = useState(false);
+
+  const identityPreview = useMemo(() => {
+    const local = (identityForm.localPart || "").trim();
+    const domId = identityForm.senderDomainId ? Number(identityForm.senderDomainId) : null;
+    const dom = domains.find((d) => Number(d.id) === Number(domId));
+    const email = local && dom?.domain ? `${local}@${dom.domain}` : "";
+    const fromName = (identityForm.fromName || "").trim();
+
+    if (fromName && email) return `${fromName} <${email}>`;
+    return email || fromName || "—";
+  }, [identityForm.localPart, identityForm.senderDomainId, identityForm.fromName, domains]);
+
+  async function applyIdentityToCampaign() {
+    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
+
+    if (!campaignId) {
+      setError("Nejdřív vyber kampaň v horním panelu.");
+      return;
+    }
+    if (!identityForm.id) {
+      setError("Nejdřív identitu ulož (Uložit identitu), pak ji lze přiřadit do kampaně.");
+      return;
+    }
+
+    setApplyingCampaign(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await updateCampaign(Number(campaignId), { senderIdentityId: Number(identityForm.id) });
+      setSuccess("Odesílací identita byla nastavena pro vybranou kampaň.");
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se nastavit odesílací identitu do kampaně.");
+    } finally {
+      setApplyingCampaign(false);
+    }
+  }
 
   useEffect(() => {
     async function loadAll() {
@@ -363,6 +403,10 @@ export default function SenderIdentitiesPage() {
               </div>
 
               <label className="flex items-center gap-2 text-[11px] text-gray-700">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold text-gray-700">Výsledná identita</div>
+                  <div className="mt-1 font-mono text-[12px] text-gray-900 break-all">{identityPreview}</div>
+                </div>
                 <input
                   type="checkbox"
                   checked={!!domainForm.isDefault}
@@ -373,33 +417,34 @@ export default function SenderIdentitiesPage() {
                 Nastavit jako výchozí doménu
               </label>
 
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
-                  >
-                    {domainForm.id ? "Uložit doménu" : "Přidat doménu"}
-                  </button>
-                  {domainForm.id && (
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
+                >
+                  {identityForm.id ? "Uložit identitu" : "Přidat identitu"}
+                </button>
+
+                {identityForm.id && (
+                  <>
                     <button
                       type="button"
-                      onClick={resetDomainForm}
+                      onClick={applyIdentityToCampaign}
+                      disabled={applyingCampaign}
+                      className="rounded-md border border-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
+                    >
+                      Do kampaně
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetIdentityForm}
                       className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] text-gray-700 hover:bg-gray-50"
                     >
                       Zrušit úpravy
                     </button>
-                  )}
-                </div>
-                {domainForm.id && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteDomain}
-                    className="rounded-md border border-red-300 px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50"
-                  >
-                    Smazat
-                  </button>
+                  </>
                 )}
               </div>
             </form>
@@ -611,10 +656,19 @@ export default function SenderIdentitiesPage() {
                     disabled={loading}
                     className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
                   >
-                    {identityForm.id
-                      ? "Uložit identitu"
-                      : "Přidat identitu"}
+                    {identityForm.id ? "Uložit identitu" : "Přidat identitu"}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={applyIdentityToCampaign}
+                    disabled={!identityForm.id || applyingCampaign}
+                    title={!identityForm.id ? "Nejdřív identitu ulož" : "Nastavit tuto identitu do vybrané kampaně"}
+                    className="rounded-md border border-slate-200/70 bg-white/20 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                  >
+                    Do kampaně
+                  </button>
+
                   {identityForm.id && (
                     <button
                       type="button"
@@ -625,6 +679,7 @@ export default function SenderIdentitiesPage() {
                     </button>
                   )}
                 </div>
+
                 {identityForm.id && (
                   <button
                     type="button"

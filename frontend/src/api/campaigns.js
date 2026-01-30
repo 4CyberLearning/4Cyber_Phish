@@ -57,3 +57,10 @@ export function sendCampaignNow(id) {
     body: JSON.stringify({}),
   });
 }
+
+export function updateCampaign(id, payload) {
+  return request(`/api/campaigns/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload || {}),
+  });
+}

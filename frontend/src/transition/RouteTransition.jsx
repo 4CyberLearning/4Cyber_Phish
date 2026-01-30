@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 const RouteTransitionCtx = createContext({
   isExiting: false,
   start: (_to, _opts) => {},
+  completeExit: () => {},
 });
 
 export function useRouteTransition() {

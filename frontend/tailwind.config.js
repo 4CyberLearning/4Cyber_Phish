@@ -3,20 +3,19 @@ import defaultTheme from "tailwindcss/defaultTheme";
 
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
-      colors: {
-        brand: {
-          400: "#22D3EE",   // light cyan
-          500: "#06B6D4",   // primary cyan
-          600: "#0891B2",   // darker cyan
-          DEFAULT: "#06B6D4",
-        },
-      },
       fontFamily: {
-        // @fontsource-variable/inter používá název "InterVariable"
         sans: ["InterVariable", ...defaultTheme.fontFamily.sans],
+      },
+      boxShadow: {
+        glass: "0 30px 80px rgba(15,23,42,0.14)",
+        soft: "0 10px 30px rgba(15,23,42,0.12)",
+      },
+      borderRadius: {
+        "4xl": "28px",
       },
     },
   },

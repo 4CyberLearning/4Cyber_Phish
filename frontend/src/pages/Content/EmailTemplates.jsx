@@ -12,6 +12,7 @@ import {
 import AssetPickerModal from "../../components/AssetPickerModal";
 import { EMAIL_TEMPLATES_HELP } from "./emailTemplatesHelpContent";
 import { createPortal } from "react-dom";
+import { updateCampaign } from "../../api/campaigns";
 
 const EMPTY_TEMPLATE = {
   id: null,
@@ -230,6 +231,34 @@ export default function EmailTemplatesPage() {
   // NEW: help + preview modaly
   const [helpOpen, setHelpOpen] = useState(false);
   const [previewState, setPreviewState] = useState({ open: false, title: "", html: "" });
+  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+  const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
+
+  const [applyingCampaign, setApplyingCampaign] = useState(false);
+
+  async function applyToCampaign(tpl) {
+    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
+    if (!campaignId) {
+      window.alert("Nejdřív vyber kampaň v horním panelu.");
+      return;
+    }
+
+    setApplyingCampaign(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await updateCampaign(Number(campaignId), { emailTemplateId: Number(tpl.id) });
+      window.dispatchEvent(
+        new CustomEvent(CAMPAIGN_UPDATED_EVENT, { detail: { id: String(campaignId), step: "email" } })
+      );
+      setSuccess("E-mail šablona byla nastavena pro vybranou kampaň.");
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se nastavit e-mail šablonu pro kampaň");
+    } finally {
+      setApplyingCampaign(false);
+    }
+  }
 
   function openPreview(tpl) {
     setSelectedTemplateId(tpl.id);
@@ -682,7 +711,7 @@ export default function EmailTemplatesPage() {
                   )}
 
                   {/* 3 tlačítka: použít / editovat / smazat */}
-                  <div className="mt-auto grid grid-cols-3 gap-2 pt-2">
+                  <div className="mt-auto grid grid-cols-4 gap-2 pt-2">                 
                     <button
                       type="button"
                       onClick={(e) => {
@@ -704,7 +733,6 @@ export default function EmailTemplatesPage() {
                     >
                       {t("content.emailTemplates.actions.editOriginal") || "Editovat"}
                     </button>
-
                     <button
                       type="button"
                       onClick={(e) => {
@@ -716,6 +744,17 @@ export default function EmailTemplatesPage() {
                     >
                       {t("common.delete") || "Smazat"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        applyToCampaign(tpl);
+                      }}
+                      disabled={applyingCampaign}
+                      className="rounded-md border border-slate-200/70 bg-white/20 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                    >
+                      Do kampaně
+                    </button>                      
                   </div>
                 </div>
               ))}

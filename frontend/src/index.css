@@ -3,49 +3,126 @@
 @tailwind utilities;
 
 :root{
-  --brand:        #00a2be;
-  --brand-strong: #006e8d;
-  --brand-soft:   #d1f3f3;
+  /* extracted from logo (tmavá + světlejší modrá) */
+  --content-max: 1200px;
+  --brand:        #4c72ee;
+  --brand-strong: #243ed3;
+  --brand-soft:   rgba(71,101,238,0.12);
+  --brand-soft-dark: rgba(46,36,211,0.18);
+
+  /* glass */
+  --glass-bg: rgba(255,255,255,0.48);
+  --glass-bg-strong: rgba(255,255,255,0.64);
+  --glass-border: rgba(255,255,255,0.62);
 }
 
-/* malý helper na jemný stín doprava */
-.shadow-right-soft{ box-shadow: 6px 0 14px -10px rgba(2,132,199,.15); }
-
-/* aktivní pruh vlevo u položky */
-.nav-active::before{
-  content:"";
-  position:absolute; left:0; top:6px; bottom:6px;
-  width:3px; border-radius: 2px;
-  background: var(--brand);
+html.dark{
+  --glass-bg: rgba(17,24,39,0.50);
+  --glass-bg-strong: rgba(17,24,39,0.70);
+  --glass-border: rgba(255,255,255,0.12);
 }
 
-/* zmenšená typografie v menu */
-.text-menu      { font-size: 13px; line-height: 1.2; }
-.text-menu-sm   { font-size: 12px; line-height: 1.1; }
+html, body, #root { height: 100%; }
 
 @layer base {
-  /* Výchozí písmo pro celou appku */
   body {
-    @apply font-sans antialiased text-gray-900;
+    @apply font-sans antialiased text-slate-900;
+    background:
+      radial-gradient(1200px 800px at 12% 10%, rgba(62,92,200,0.22), transparent 60%),
+      radial-gradient(900px 650px at 82% 18%, rgba(34,211,238,0.18), transparent 55%),
+      radial-gradient(900px 700px at 52% 92%, rgba(99,102,241,0.12), transparent 60%),
+      linear-gradient(180deg, #f7f9ff, #ffffff);
   }
-  /* jemná typografická doporučení */
-  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+  html.dark body{
+    @apply text-slate-100;
+    background:
+      radial-gradient(1200px 800px at 12% 10%, rgba(62,92,200,0.22), transparent 60%),
+      radial-gradient(900px 650px at 82% 18%, rgba(34,211,238,0.14), transparent 55%),
+      radial-gradient(900px 700px at 52% 92%, rgba(99,102,241,0.10), transparent 60%),
+      linear-gradient(180deg, #050713, #0b1020);
+  }
 }
 
-/* jemné přechody napříč aplikací */
-* { transition: background-color .4s, color .4s, border-color .4s, opacity .4s, transform .4s; }
-
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
-@keyframes fadeOut { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(8px) } }
-
-html, body, #root { height: 100%; background: #fff; }
-
-/* --- soft stíny a společná karta --- */
-@layer utilities {
-  .shadow-right-soft { box-shadow: 8px 0 24px -12px rgba(0,0,0,.22); }
-  .shadow-soft       { box-shadow: 0 8px 24px -12px rgba(0,0,0,.20); }
-}
+/* jen jemné přechody (ne globálně na *) */
+a, button, input, textarea, select { transition: background-color .25s, color .25s, border-color .25s, opacity .25s, transform .25s; }
 
 @layer components {
-  .card { @apply bg-white rounded-lg border border-gray-200; box-shadow: 0 8px 24px -12px rgba(0,0,0,.20); }
+  .glass-panel {
+    @apply backdrop-blur-2xl border;
+    background: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow:
+      0 10px 30px rgba(15,23,42,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.70);
+  }
+
+  .glass-panel-strong {
+    @apply backdrop-blur-2xl border;
+    background: var(--glass-bg-strong);
+    border-color: var(--glass-border);
+    box-shadow:
+      0 14px 38px rgba(15,23,42,0.14),
+      inset 0 1px 0 rgba(255,255,255,0.72);
+  }
+
+  .content-panel {
+    background: rgba(255,255,255,0.92);
+    border: 1px solid rgba(15,23,42,0.08);
+    box-shadow:
+      0 18px 46px rgba(15,23,42,0.12),
+      inset 0 1px 0 rgba(255,255,255,0.55);
+  }
+
+  html.dark .content-panel {
+    background: rgba(15,23,42,0.88);
+    border-color: rgba(255,255,255,0.10);
+    box-shadow:
+      0 22px 52px rgba(0,0,0,0.45),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+  } 
+
+  /* existující .card použijeme jako glass card */
+  .card { @apply glass-panel rounded-2xl; }
+
+  .app-chrome{
+    @apply backdrop-blur-2xl;
+    background: var(--glass-bg-strong);
+    box-shadow: 0 18px 48px rgba(15,23,42,0.14);
+  }  
+
+  .content-wrap{
+    width: 100%;
+    max-width: var(--content-max);
+    margin-left: auto;
+    margin-right: auto;
+    transition: max-width .5s ease;
+  }
+}
+
+html, body, #root { min-height: 100%; }
+
+body{
+  background: transparent; /* pozadí řeší pseudo-element */
+}
+
+body::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+
+  /* plynulé pozadí bez “konce” při scrollu */
+  background:
+    radial-gradient(1200px 700px at 20% 80%, rgba(71,101,238,0.18), transparent 60%),
+    radial-gradient(900px 500px at 85% 15%, rgba(46,36,211,0.14), transparent 55%),
+    linear-gradient(180deg, #f8fafc 0%, #f8fafc 65%, #f3f5ff 100%);
+}
+
+html.dark body::before{
+  background:
+    radial-gradient(1200px 700px at 20% 80%, rgba(71,101,238,0.12), transparent 60%),
+    radial-gradient(900px 500px at 85% 15%, rgba(46,36,211,0.10), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #0b1220 65%, #0a1020 100%);
 }
