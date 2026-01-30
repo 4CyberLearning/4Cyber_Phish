@@ -14,6 +14,8 @@ import LandingPagesPage from "./pages/Content/LandingPages";
 import SenderIdentitiesPage from "./pages/Content/SenderIdentities";
 import CampaignCreate from "./pages/CampaignCreate";
 import CampaignDetail from "./pages/CampaignDetail";
+import AssetsPage from "./pages/Content/Assets";
+import { apiUrl } from "./api/base";
 
 export default function App() {
   // undefined = loading, null = not logged, object = logged
@@ -24,7 +26,7 @@ export default function App() {
 
     (async () => {
       try {
-        const r = await fetch("/api/auth/me", { credentials: "include" });
+        const r = await fetch(apiUrl("/api/auth/me"), { credentials: "include" });
         if (!alive) return;
 
         if (!r.ok) {
@@ -75,6 +77,7 @@ export default function App() {
           <Route path="/content/email-templates" element={<EmailTemplatesPage />} />
           <Route path="/content/landing-pages" element={<LandingPagesPage />} />
           <Route path="/content/sender-identities" element={<SenderIdentitiesPage />} />
+          <Route path="/content/assets" element={<AssetsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
 

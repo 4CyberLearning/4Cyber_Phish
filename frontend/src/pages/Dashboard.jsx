@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { apiUrl } from "../api/base";
 
 export default function Dashboard(){
   const [result, setResult] = useState("");
 
   async function sendTest(){
-    const r = await fetch("/api/debug/send-test", {
+    const r = await fetch(apiUrl("/api/debug/send-test"), {
       method: "POST",
       headers: { "Content-Type":"application/json" },
       credentials: "include",

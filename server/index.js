@@ -106,7 +106,15 @@ function requireAuth(req, res, next) {
 
 // ---------- Statické soubory ----------
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), {
+    setHeaders(res) {
+      // aby šly obrázky načítat z jiného originu (jiný port, doména, email klient, atd.)
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  })
+);
 
 // ---------- Public routy ----------
 app.get("/healthz", (_req, res) => res.json({ ok: true }));

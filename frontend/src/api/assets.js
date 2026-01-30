@@ -4,38 +4,63 @@ const API_BASE =
     import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")) ||
   "";
 
+function apiUrl(path) {
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
+
 async function uploadAsset(file) {
   const formData = new FormData();
   formData.append("file", file);
 
-  try {
-    const url = API_BASE ? `${API_BASE}/api/assets` : "/api/assets";
+  const res = await fetch(apiUrl("/api/assets"), {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
 
-    const res = await fetch(url, {
-      method: "POST",
-      body: formData,
-      credentials: "include",
-    });
+  const data = await res.json().catch(() => null);
 
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      // nic
-    }
+  if (!res.ok) {
+    const msg =
+      (data && data.error) ||
+      `Asset upload failed (${res.status} ${res.statusText || ""})`.trim();
+    throw new Error(msg);
+  }
 
-    if (!res.ok) {
-      const msg =
-        (data && data.error) ||
-        `Asset upload failed (${res.status} ${res.statusText || ""})`.trim();
-      throw new Error(msg);
-    }
+  return data;
+}
 
-    return data;
-  } catch (err) {
-    console.error("Asset upload error", err);
-    throw new Error("Image upload failed");
+async function listAssets() {
+  const res = await fetch(apiUrl("/api/assets"), {
+    method: "GET",
+    credentials: "include",
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const msg =
+      (data && data.error) ||
+      `Assets load failed (${res.status} ${res.statusText || ""})`.trim();
+    throw new Error(msg);
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
+async function deleteAsset(id) {
+  const res = await fetch(apiUrl(`/api/assets/${id}`), {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const data = await res.json().catch(() => null);
+    const msg =
+      (data && data.error) ||
+      `Asset delete failed (${res.status} ${res.statusText || ""})`.trim();
+    throw new Error(msg);
   }
 }
 
-export { uploadAsset };
+export { uploadAsset, listAssets, deleteAsset };

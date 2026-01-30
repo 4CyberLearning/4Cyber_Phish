@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { apiUrl } from "../../api/base";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("")
@@ -9,7 +10,7 @@ export default function LoginForm() {
     e.preventDefault()
     setError("")
 
-    const r = await fetch("/api/auth/login", {
+    const r = await fetch(apiUrl("/api/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

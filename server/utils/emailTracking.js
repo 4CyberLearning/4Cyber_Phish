@@ -41,7 +41,18 @@ export function instrumentEmailHtml(html, trackingToken) {
       return match;
     }
 
-    const encoded = encodeURIComponent(url);
+    let finalUrl = url;
+
+    // auto-append token pro landing pages (jen pokud už tam token není)
+    try {
+      const u = new URL(finalUrl, TRACKING_BASE);
+      if (u.pathname.startsWith("/lp/") && !u.searchParams.get("t")) {
+        u.searchParams.set("t", trackingToken);
+        finalUrl = u.toString();
+      }
+    } catch (_) {}
+
+    const encoded = encodeURIComponent(finalUrl);
     const tracked = `${TRACKING_BASE}/t/c/${trackingToken}?u=${encoded}`;
     return `href="${tracked}"`;
   });

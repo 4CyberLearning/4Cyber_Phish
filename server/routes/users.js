@@ -6,6 +6,21 @@ const router = Router();
 
 // stejně jako u šablon: jeden demo tenant
 const DEFAULT_TENANT_SLUG = "demo";
+const USER_PUBLIC_SELECT = {
+  id: true,
+  email: true,
+  fullName: true,
+  department: true,
+  role: true,
+  isAdmin: true,
+  createdAt: true,
+  groupLinks: {
+    select: {
+      groupId: true,
+      group: { select: { id: true, name: true } },
+    },
+  },
+};
 
 async function getTenantId() {
   let tenant = await prisma.tenant.findUnique({
@@ -50,14 +65,9 @@ function normalizeUserInput(body = {}) {
 router.get("/users", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
-
     const users = await prisma.user.findMany({
       where: { tenantId },
-      include: {
-        groupLinks: {
-          include: { group: true },
-        },
-      },
+      select: USER_PUBLIC_SELECT,
       orderBy: { createdAt: "desc" },
     });
 
@@ -91,14 +101,10 @@ router.post("/users", async (req, res) => {
         role: role || null,
         groupLinks:
           groupIds && groupIds.length
-            ? {
-                create: groupIds.map((groupId) => ({ groupId })),
-              }
+            ? { create: groupIds.map((groupId) => ({ groupId })) }
             : undefined,
       },
-      include: {
-        groupLinks: { include: { group: true } },
-      },
+      select: USER_PUBLIC_SELECT,
     });
 
     res.status(201).json(user);
@@ -161,9 +167,7 @@ router.put("/users/:id", async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
-        groupLinks: { include: { group: true } },
-      },
+      select: USER_PUBLIC_SELECT,
     });
 
     res.json(user);

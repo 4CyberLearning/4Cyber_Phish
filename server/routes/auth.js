@@ -36,7 +36,10 @@ router.post("/logout", (req, res) => {
 
 router.get("/me", async (req, res) => {
   if (!req.session?.userId) return res.status(401).json({ error: "Not logged in" });
-  const user = await prisma.user.findUnique({ where: { id: req.session.userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: req.session.userId },
+    select: { id: true, email: true, fullName: true, isAdmin: true },
+  });
   res.json({ user });
 });
 

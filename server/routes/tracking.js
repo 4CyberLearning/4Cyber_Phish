@@ -27,7 +27,11 @@ function sendPixel(res) {
   res.end(PIXEL, "binary");
 }
 
-async function recordInteraction(cu, type, meta = {}) {
+  async function recordInteraction(cu, type, meta) {
+    const metaValue =
+      meta && typeof meta === "object" && Object.keys(meta).length > 0
+        ? meta
+        : undefined;
   const now = new Date();
   const updates = {};
 
@@ -81,10 +85,7 @@ router.get("/o/:token.gif", async (req, res) => {
     });
 
     if (cu) {
-      await recordInteraction(cu, InteractionType.OPENED, {
-        ua: req.get("user-agent") || null,
-        ip: req.ip,
-      });
+      await recordInteraction(cu, InteractionType.OPENED);
     }
   } catch (e) {
     console.error("OPEN tracking error", e);
@@ -97,7 +98,12 @@ router.get("/o/:token.gif", async (req, res) => {
 // ---- CLICK: GET /t/c/:token?u=<encodedTarget> ----
 router.get("/c/:token", async (req, res) => {
   const token = req.params.token;
-  const target = req.query.u ? decodeURIComponent(String(req.query.u)) : null;
+  let target = null;
+  try {
+    if (req.query.u) target = decodeURIComponent(String(req.query.u));
+  } catch {
+    target = null;
+  }
 
   try {
     const cu = await prisma.campaignUser.findUnique({
@@ -105,11 +111,7 @@ router.get("/c/:token", async (req, res) => {
     });
 
     if (cu) {
-      await recordInteraction(cu, InteractionType.CLICKED, {
-        target,
-        ua: req.get("user-agent") || null,
-        ip: req.ip,
-      });
+      await recordInteraction(cu, InteractionType.CLICKED);
     }
   } catch (e) {
     console.error("CLICK tracking error", e);
@@ -123,6 +125,34 @@ router.get("/c/:token", async (req, res) => {
     }
 
     res.redirect(302, redirectTarget);
+  }
+});
+
+// ---- LANDING FORM SUBMIT: POST /t/s/:token ----
+// Ukládá pouze reakci + boolean flagy, nikdy hodnoty z formuláře.
+router.post("/s/:token", async (req, res) => {
+  try {
+    const token = String(req.params.token || "").trim();
+
+    const cu = await prisma.campaignUser.findUnique({
+      where: { trackingToken: token },
+    });
+    if (!cu) return res.status(404).json({ ok: false });
+
+    const pageSlug = typeof req.body?.pageSlug === "string" ? req.body.pageSlug.slice(0, 200) : null;
+    const hasUser = !!req.body?.hasUser;
+    const hasPassword = !!req.body?.hasPassword;
+
+    await recordInteraction(cu, InteractionType.SUBMITTED, {
+      pageSlug,
+      hasUser,
+      hasPassword,
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Landing submit tracking error:", err);
+    return res.status(500).json({ ok: false });
   }
 });
 

@@ -198,7 +198,6 @@
         "noSubject": "(bez předmětu)"
       }
     },
-
     "recipients": {
       "title": "Příjemci kampaní",
 
@@ -231,6 +230,72 @@
         "confirmDeleteGroup": "Opravdu chcete tuto skupinu smazat? Členství uživatelů bude odstraněno.",
         "groupDeleted": "Skupina byla smazána."
       }
-    }
+    },
+    "landingPages": {
+      "title": "Landing pages",
+      "description": "Tady připravíš HTML cílových stránek, které se zobrazí po kliknutí z phishingového e-mailu.",
+      "empty": "Zatím nemáš žádné landing pages.",
+      "view": {
+        "select": "Výběr stránek",
+        "edit": "Editor"
+      },
+      "actions": {
+        "newBlank": "Nová prázdná stránka",
+        "useAsBase": "Použít jako základ",
+        "editOriginal": "Editovat",
+        "save": "Uložit",
+        "saveCopy": "Uložit kopii"
+      },
+      "fields": {
+        "name": "Název",
+        "slug": "Slug / URL část",
+        "tags": "Tagy",
+        "tagsPlaceholder": "např. office365, login, spear-phishing"
+      },
+      "preview": {
+        "title": "Náhled",
+        "empty": "Zatím žádný obsah k zobrazení."
+      },
+      "messages": {
+        "nameRequired": "Název je povinný",
+        "saved": "Uloženo",
+        "deleted": "Smazáno",
+        "confirmDelete": "Smazat landing page?"
+      }
+    },
+    "content": {
+      "landingPages": {
+        "title": "Landing pages",
+        "empty": "Zatím nemáš žádné landing pages.",
+        "view": {
+          "select": "Výběr stránek",
+          "edit": "Editor"
+        },
+        "actions": {
+          "newBlank": "Nová prázdná stránka",
+          "useAsBase": "Použít jako základ",
+          "editOriginal": "Editovat",
+          "save": "Uložit",
+          "saveCopy": "Uložit kopii"
+        },
+        "fields": {
+          "name": "Název",
+          "slug": "Slug / URL část",
+          "tags": "Tagy",
+          "tagsPlaceholder": "např. office365, login, spear-phishing"
+        },
+        "messages": {
+          "nameRequired": "Název je povinný",
+          "saved": "Uloženo",
+          "deleted": "Smazáno",
+          "confirmDelete": "Smazat landing page?",
+          "saveBeforeCopy": "Nejdřív vyplň landing page před uložením kopie."
+        },
+        "preview": {
+          "title": "Náhled",
+          "empty": "Zatím žádný obsah k zobrazení."
+        }
+      }
+    }    
   }
 }

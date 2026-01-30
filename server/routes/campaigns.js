@@ -29,12 +29,15 @@ async function getTenantId() {
 const APP_BASE =
   (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
 
-// jednoduchý builder URL na landing page – později můžeš změnit na cokoliv jiného
-function buildLandingUrl(campaign, campaignUser) {
-  // zatím jen placeholder URL, kterou budeš obsluhovat vlastním frontendem/backendem
-  return `${APP_BASE}/landing/${campaign.landingPageId}`;
-}
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || process.env.TRACKING_BASE_URL || APP_BASE).replace(/\/$/, "");
 
+function buildLandingUrl(campaign, campaignUser) {
+  const slug = campaign?.landingPage?.urlSlug || String(campaign.landingPageId || "").trim();
+  const base = PUBLIC_BASE.replace(/\/$/, "");
+  const url = `${base}/lp/${encodeURIComponent(slug)}`;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}t=${encodeURIComponent(campaignUser.trackingToken)}`;
+}
 
 // GET /api/campaigns – seznam kampaní
 router.get('/campaigns', async (_req, res) => {
@@ -151,6 +154,7 @@ async function sendCampaignEmails(campaignId, tenantId) {
     where: { id: campaignId, tenantId },
     include: {
       emailTemplate: true,
+      landingPage: true, // ✅ nutné pro urlSlug
       senderIdentity: {
         include: { senderDomain: true },
       },
@@ -213,9 +217,6 @@ async function sendCampaignEmails(campaignId, tenantId) {
           userId: cu.userId,
           campaignUserId: cu.id,
           type: InteractionType.EMAIL_SENT,
-          meta: {
-            messageId: info.messageId,
-          },
         },
       }),
       prisma.campaignUser.update({
