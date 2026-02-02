@@ -34,17 +34,22 @@ async function main() {
     },
   ]
 
+  // V produkci seedujeme jen ty adminy, kteří mají email+password.
+  // ADMIN3/4 jsou volitelní.
+  const effectiveAdmins = admins.filter((a) => a.email && a.password)
 
   if (isProd) {
-    admins.forEach((a, i) => {
-      const n = i + 1
-      if (!a.email || !a.password || a.password.startsWith('CHANGE_ME')) {
-        throw new Error(`Set ADMIN${n}_EMAIL and ADMIN${n}_PASSWORD in production env.`)
+    if (effectiveAdmins.length === 0) {
+      throw new Error("Set at least ADMIN1_EMAIL and ADMIN1_PASSWORD in production env.")
+    }
+    effectiveAdmins.forEach((a) => {
+      if (String(a.password).startsWith("CHANGE_ME")) {
+        throw new Error("Admin password cannot start with CHANGE_ME in production env.")
       }
     })
   }
 
-  for (const a of admins) {
+  for (const a of effectiveAdmins) {
     const passwordHash = await bcrypt.hash(a.password, 12)
 
     await prisma.user.upsert({

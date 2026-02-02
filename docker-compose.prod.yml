@@ -45,6 +45,12 @@ services:
       ADMIN1_PASSWORD: ${ADMIN1_PASSWORD}
       ADMIN2_EMAIL: ${ADMIN2_EMAIL}
       ADMIN2_PASSWORD: ${ADMIN2_PASSWORD}
+      ADMIN3_EMAIL: ${ADMIN3_EMAIL}
+      ADMIN3_PASSWORD: ${ADMIN3_PASSWORD}
+      ADMIN3_NAME: ${ADMIN3_NAME}
+      ADMIN4_EMAIL: ${ADMIN4_EMAIL}
+      ADMIN4_PASSWORD: ${ADMIN4_PASSWORD}
+      ADMIN4_NAME: ${ADMIN4_NAME}      
     volumes:
       - backend_uploads:/app/uploads
     ports:
