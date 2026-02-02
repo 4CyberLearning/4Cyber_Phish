@@ -14,6 +14,8 @@ import LandingPagesPage from "./pages/Content/LandingPages";
 import SenderIdentitiesPage from "./pages/Content/SenderIdentities";
 import CampaignCreate from "./pages/CampaignCreate";
 import CampaignDetail from "./pages/CampaignDetail";
+import CampaignPreflight from "./pages/CampaignPreflight";
+import CampaignLaunch from "./pages/CampaignLaunch";
 import AssetsPage from "./pages/Content/Assets";
 import { apiUrl } from "./api/base";
 import { RouteTransitionProvider } from "./transition/RouteTransition";
@@ -73,8 +75,10 @@ export default function App() {
           <Route path="/campaigns/new" element={<CampaignCreate />} />
           <Route path="/campaigns/:id" element={<CampaignDetail />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/campaigns/:id/launch" element={<CampaignLaunch />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/playbook" element={<Playbook />} />
+          <Route path="/campaigns/:id/preflight" element={<CampaignPreflight />} />
           <Route path="/content/email-templates" element={<EmailTemplatesPage />} />
           <Route path="/content/landing-pages" element={<LandingPagesPage />} />
           <Route path="/content/sender-identities" element={<SenderIdentitiesPage />} />

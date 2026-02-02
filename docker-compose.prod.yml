@@ -36,11 +36,9 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-phish.sid}
       SESSION_MAX_AGE_MS: ${SESSION_MAX_AGE_MS:-604800000}
 
-      SMTP_HOST: "smtp.office365.com"
-      SMTP_PORT: "587"
+      SMTP_HOST: ${SMTP_HOST}   # TODO doplnit doménu
+      SMTP_PORT: "25"
       SMTP_SECURE: "false"
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
 
       ADMIN1_EMAIL: ${ADMIN1_EMAIL}

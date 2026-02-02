@@ -29,12 +29,15 @@ function normalizeInput(body = {}) {
   const localPart = String(body.localPart || "").trim().toLowerCase();
   const senderDomainId = Number(body.senderDomainId);
   const replyTo = body.replyTo ? String(body.replyTo).trim() : null;
-  const description = body.description ? String(body.description).trim() : null;
+  const descriptionRaw = body.description ?? body.note ?? null;
+  const description = descriptionRaw ? String(descriptionRaw).trim() : null;
   const isDefault = Boolean(body.isDefault);
 
-  if (!name || !fromName || !localPart || !senderDomainId) {
-    throw new Error("Name, From name, local-part and domain are required");
+  if (!name || !localPart || !senderDomainId) {
+    throw new Error("Name, local-part and domain are required");
   }
+
+  const finalFromName = fromName || name;
 
   if (localPart.includes("@")) {
     throw new Error("Local-part must not contain '@'");
@@ -42,7 +45,7 @@ function normalizeInput(body = {}) {
 
   return {
     name,
-    fromName,
+    fromName: finalFromName,
     localPart,
     senderDomainId,
     replyTo,

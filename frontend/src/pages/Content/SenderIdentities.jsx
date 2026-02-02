@@ -13,6 +13,7 @@ import {
   deleteSenderIdentity,
 } from "../../api/senderIdentities";
 import { updateCampaign } from "../../api/campaigns";
+import { useCurrentCampaign } from "../../hooks/useCurrentCampaign";
 
 const EMPTY_DOMAIN = {
   id: null,
@@ -46,6 +47,12 @@ function formatSender(identity) {
 
 export default function SenderIdentitiesPage() {
   const { t } = useTranslation();
+
+  const { hasCampaign, campaignId, campaign } = useCurrentCampaign();
+  const campaignSenderIdentityId = campaign?.senderIdentityId ?? campaign?.senderIdentity?.id;
+  const isInCurrentCampaign = (id) =>
+    hasCampaign && Number(campaignSenderIdentityId) === Number(id);
+
   const [domains, setDomains] = useState([]);
   const [identities, setIdentities] = useState([]);
 
@@ -58,7 +65,6 @@ export default function SenderIdentitiesPage() {
 
   const [domainSearch, setDomainSearch] = useState("");
   const [identitySearch, setIdentitySearch] = useState("");
-  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
   const [applyingCampaign, setApplyingCampaign] = useState(false);
 
   const identityPreview = useMemo(() => {
@@ -73,14 +79,18 @@ export default function SenderIdentitiesPage() {
   }, [identityForm.localPart, identityForm.senderDomainId, identityForm.fromName, domains]);
 
   async function applyIdentityToCampaign() {
-    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
-
-    if (!campaignId) {
+    if (!hasCampaign) {
       setError("Nejdřív vyber kampaň v horním panelu.");
       return;
     }
+
     if (!identityForm.id) {
       setError("Nejdřív identitu ulož (Uložit identitu), pak ji lze přiřadit do kampaně.");
+      return;
+    }
+
+    if (isInCurrentCampaign(identityForm.id)) {
+      setSuccess("Tato identita už je v aktuální kampani.");
       return;
     }
 
@@ -90,6 +100,7 @@ export default function SenderIdentitiesPage() {
 
     try {
       await updateCampaign(Number(campaignId), { senderIdentityId: Number(identityForm.id) });
+      window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId) } }));
       setSuccess("Odesílací identita byla nastavena pro vybranou kampaň.");
     } catch (e) {
       setError(e?.message || "Nepodařilo se nastavit odesílací identitu do kampaně.");
@@ -659,15 +670,27 @@ export default function SenderIdentitiesPage() {
                     {identityForm.id ? "Uložit identitu" : "Přidat identitu"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={applyIdentityToCampaign}
-                    disabled={!identityForm.id || applyingCampaign}
-                    title={!identityForm.id ? "Nejdřív identitu ulož" : "Nastavit tuto identitu do vybrané kampaně"}
-                    className="rounded-md border border-slate-200/70 bg-white/20 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-                  >
-                    Do kampaně
-                  </button>
+                  {hasCampaign && (
+                    <button
+                      type="button"
+                      onClick={applyIdentityToCampaign}
+                      disabled={!identityForm.id || applyingCampaign || isInCurrentCampaign(identityForm.id)}
+                      title={
+                        !identityForm.id
+                          ? "Nejdřív identitu ulož"
+                          : isInCurrentCampaign(identityForm.id)
+                          ? "Tato identita už je v aktuální kampani"
+                          : "Nastavit tuto identitu do vybrané kampaně"
+                      }
+                      className={`rounded-md border px-3 py-1.5 text-[11px] font-medium disabled:opacity-50 ${
+                        isInCurrentCampaign(identityForm.id)
+                          ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)]"
+                          : "border-slate-200/70 bg-white/20 text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                      }`}
+                    >
+                      {isInCurrentCampaign(identityForm.id) ? "V kampani" : "Do kampaně"}
+                    </button>
+                  )}
 
                   {identityForm.id && (
                     <button
@@ -727,12 +750,13 @@ export default function SenderIdentitiesPage() {
                         isDefault: !!i.isDefault,
                       })
                     }
-                    className={
-                      "flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-gray-50 " +
-                      (identityForm.id === i.id
-                        ? "bg-[var(--brand-soft)]"
-                        : "")
-                    }
+                    className={`relative flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-gray-50 ${
+                      identityForm.id === i.id ? "bg-[var(--brand-soft)]" : ""
+                    } ${
+                      isInCurrentCampaign(i.id)
+                        ? "bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.20)]"
+                        : ""
+                    }`}
                   >
                     <div>
                       <div className="text-xs font-medium text-gray-900">
@@ -747,15 +771,21 @@ export default function SenderIdentitiesPage() {
                         </div>
                       )}
                     </div>
-                    <div className="text-right text-[11px] text-gray-500">
+                    <div className="text-right text-[11px] text-gray-500 space-y-1">
+                      {isInCurrentCampaign(i.id) && (
+                        <div>
+                          <span className="rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                            V aktuální kampani
+                          </span>
+                        </div>
+                      )}
+
                       {i.isDefault ? (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
                           Výchozí
                         </span>
                       ) : (
-                        <span className="text-[11px] text-gray-400">
-                          –
-                        </span>
+                        <span className="text-[11px] text-gray-400">–</span>
                       )}
                     </div>
                   </button>

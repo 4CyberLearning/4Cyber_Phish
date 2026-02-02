@@ -1,22 +1,44 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { listCampaigns } from "../../api/campaigns";
+import { getCampaign, listCampaigns } from "../../api/campaigns";
 import { useRouteTransition } from "../../transition/RouteTransition";
 
+// 1) Email
+// 2) Landing page
+// 3) Odesílatel
+// 4) Příjemci (před kontrolou)
+// 5) Příprava
+// 6) Kontrola
+// 7) Spuštění
 const STEPS = [
-  { key: "landing", label: "Landing", to: () => "/content/landing-pages" },
-  { key: "email", label: "E-mail", to: () => "/content/email-templates" },
+  { key: "email", label: "Email", to: () => "/content/email-templates" },
+  { key: "landing", label: "Landing page", to: () => "/content/landing-pages" },
   { key: "sender", label: "Odesílatel", to: () => "/content/sender-identities" },
-  { key: "targets", label: "Příjemci", to: () => "/users" },
+  {
+    key: "targets",
+    label: (
+      <>
+        <span>Příjemci</span>
+        <span className="block">(před kontrolou)</span>
+      </>
+    ),
+    title: "Příjemci (před kontrolou)",
+    to: () => "/users",
+  },
+  { key: "preflight", label: "Příprava", to: (id) => (id ? `/campaigns/${id}/preflight` : "/campaigns") },
   { key: "review", label: "Kontrola", to: (id) => (id ? `/campaigns/${id}` : "/campaigns") },
-  { key: "launch", label: "Spuštění", to: () => "/campaigns" },
+  { key: "launch", label: "Spuštění", to: (id) => (id ? `/campaigns/${id}/launch` : "/campaigns") },
 ];
 
 const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
 const LOCK_KEY = "campaign.locked.v1";
-const PROGRESS_KEY = "campaign.progress.v2";
-const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
+const PROGRESS_KEY = "campaign.progress.v3";
 
+const PREFLIGHT_KEY = "campaign.preflight.v1";
+
+const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
+const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
+const CAMPAIGN_CHANGED_EVENT = "campaign:changed";
 const FALLBACK_ID = "__no_campaign__";
 const NONE_ID = "__none__";
 
@@ -24,19 +46,37 @@ function readJson(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
   } catch {
     return fallback;
   }
 }
+
 function writeJson(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {}
 }
+
 function ensureBucket(progressById, id) {
   if (progressById[id]) return progressById;
-  return { ...progressById, [id]: { currentStep: "landing", completed: {} } };
+  return { ...progressById, [id]: { currentStep: "email", completed: {} } };
+}
+
+function recipientsCount(c) {
+  if (!c) return 0;
+  if (Array.isArray(c.targetUsers) && c.targetUsers.length) return c.targetUsers.length;
+  if (typeof c.recipientCount === "number") return c.recipientCount;
+  if (typeof c.userCount === "number") return c.userCount;
+  if (typeof c.targetsCount === "number") return c.targetsCount;
+  return 0;
+}
+
+function readPreflightDone(campaignId) {
+  if (!campaignId) return false;
+  const all = readJson(PREFLIGHT_KEY, {});
+  return !!all[String(campaignId)]?.done;
 }
 
 function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
@@ -56,10 +96,8 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
 
   useEffect(() => {
     if (open) {
-      // focus search po otevření
       setTimeout(() => inputRef.current?.focus(), 0);
     } else {
-      // po zavření vyčistit hledání
       setQ("");
     }
   }, [open]);
@@ -67,7 +105,7 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
   const disabled = loading || locked;
 
   const label = useMemo(() => {
-    if (value === NONE_ID) return "Žádná";
+    if (!value || value === NONE_ID) return "Žádná kampaň";
     const found = campaigns.find((c) => String(c.id) === String(value));
     if (found) return found.name || `Kampaň #${found.id}`;
     return loading ? "Načítám…" : "Vyber kampaň";
@@ -93,7 +131,6 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
           "h-8 w-[260px] max-w-[52vw]",
           "rounded-2xl px-3 pr-10 text-[12px] font-semibold",
           "text-left outline-none transition relative",
-          // výraznější "field" (aby bylo vidět že je to dropdown)
           "bg-white/60 border border-slate-200/90",
           "shadow-[0_1px_0_rgba(255,255,255,0.7),0_8px_22px_rgba(15,23,42,0.08)]",
           "hover:bg-white/70",
@@ -104,7 +141,6 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
       >
         <span className="block truncate text-slate-900 dark:text-slate-100">{label}</span>
 
-        {/* caret */}
         <svg
           className={[
             "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2",
@@ -135,7 +171,6 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
               "overflow-hidden",
             ].join(" ")}
           >
-            {/* search */}
             <div className="p-2 border-b border-slate-200/80 dark:border-white/10">
               <div className="relative">
                 <input
@@ -160,7 +195,6 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
               </div>
             </div>
 
-            {/* list */}
             <div className="max-h-[280px] overflow-auto p-2">
               <button
                 type="button"
@@ -170,13 +204,20 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
                 }}
                 className={[
                   "w-full rounded-xl px-3 py-2 text-left text-[12px] font-semibold",
-                  value === NONE_ID
+                  !value || value === NONE_ID
                     ? "bg-[var(--brand-soft)] text-[var(--brand-strong)]"
                     : "text-slate-800 hover:bg-slate-50",
                   "dark:text-slate-100 dark:hover:bg-white/10",
                 ].join(" ")}
               >
-                Žádná
+                <div className="flex items-center justify-between gap-2">
+                  <span>Žádná kampaň</span>
+                  {(!value || value === NONE_ID) && (
+                    <span className="rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                      Aktuální
+                    </span>
+                  )}
+                </div>
               </button>
 
               {filtered.length ? (
@@ -199,14 +240,19 @@ function CampaignDropdown({ value, locked, loading, campaigns, onChange }) {
                         "dark:text-slate-100 dark:hover:bg-white/10",
                       ].join(" ")}
                     >
-                      {c.name || `Kampaň #${c.id}`}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate">{c.name || `Kampaň #${c.id}`}</span>
+                        {active && (
+                          <span className="shrink-0 rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                            Aktuální
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })
               ) : (
-                <div className="px-3 py-2 text-[12px] text-slate-500 dark:text-slate-300">
-                  Nenalezeno
-                </div>
+                <div className="px-3 py-2 text-[12px] text-slate-500 dark:text-slate-300">Nenalezeno</div>
               )}
             </div>
           </motion.div>
@@ -227,14 +273,35 @@ export default function Topbar({ onOpenSidebar }) {
     () => localStorage.getItem(SELECTED_CAMPAIGN_KEY) || ""
   );
 
+  const [campaign, setCampaign] = useState(null);
+
   const [progressById, setProgressById] = useState(() => readJson(PROGRESS_KEY, {}));
 
   const hasCampaign = !!selectedCampaignId && selectedCampaignId !== NONE_ID;
-  const effectiveId = hasCampaign ? selectedCampaignId : FALLBACK_ID;
+  const effectiveId = hasCampaign ? String(selectedCampaignId) : FALLBACK_ID;
 
-  const progress = progressById[effectiveId] || { currentStep: "landing", completed: {} };
-  const currentStep = progress.currentStep || "landing";
-  const completed = progress.completed || {};
+  const progress = progressById[effectiveId] || { currentStep: "email", completed: {} };
+  const currentStep = STEPS.some((s) => s.key === progress.currentStep) ? progress.currentStep : "email";
+  const manualCompleted = progress.completed || {};
+
+  const autoCompleted = useMemo(() => {
+    if (!hasCampaign) return {};
+    return {
+      email: !!(campaign?.emailTemplate || campaign?.emailTemplateId),
+      landing: !!(campaign?.landingPage || campaign?.landingPageId),
+      sender: !!(campaign?.senderIdentity || campaign?.senderIdentityId),
+      targets: recipientsCount(campaign) > 0,
+      preflight: readPreflightDone(selectedCampaignId),
+      launch: ["ACTIVE", "FINISHED", "COMPLETED", "CANCELED"].includes(String(campaign?.status || "").toUpperCase()),
+w    };
+  }, [hasCampaign, campaign, selectedCampaignId]);
+
+  const completed = useMemo(() => {
+    return {
+      ...manualCompleted,
+      ...autoCompleted,
+    };
+  }, [manualCompleted, autoCompleted]);
 
   const selectCampaign = useCallback((id) => {
     const raw = String(id ?? "");
@@ -250,18 +317,35 @@ export default function Topbar({ onOpenSidebar }) {
     }
 
     setProgressById((prev) => ensureBucket(prev, nextId === NONE_ID ? FALLBACK_ID : nextId));
+
+    // pro posluchače: id="" znamená "žádná kampaň"
+    const payload = { detail: { id: nextId === NONE_ID ? "" : nextId } };
+    window.dispatchEvent(new CustomEvent(CAMPAIGN_CHANGED_EVENT, payload));
+    window.dispatchEvent(new CustomEvent(CAMPAIGN_SELECTED_EVENT, payload));
   }, []);
 
   useEffect(() => {
-    // pokud je uložené "Žádná", lock nesmí zůstat aktivní
-    if (selectedCampaignId === NONE_ID && locked) {
-      localStorage.setItem(LOCK_KEY, "0");
-      setLocked(false);
+    if (!hasCampaign) {
+      setCampaign(null);
+      return;
     }
-  }, [selectedCampaignId, locked]);
+
+    let alive = true;
+    (async () => {
+      try {
+        const data = await getCampaign(Number(selectedCampaignId));
+        if (alive) setCampaign(data);
+      } catch {
+        if (alive) setCampaign(null);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [hasCampaign, selectedCampaignId]);
 
   useEffect(() => {
-    // init bucket
     setProgressById((prev) => {
       const next = ensureBucket(prev, effectiveId);
       if (next !== prev) writeJson(PROGRESS_KEY, next);
@@ -284,7 +368,6 @@ export default function Topbar({ onOpenSidebar }) {
         const arr = Array.isArray(data) ? data : [];
         setCampaigns(arr);
 
-        // pokud není nic uložené (prázdné), vyber první
         if (!localStorage.getItem(SELECTED_CAMPAIGN_KEY) && arr.length) {
           selectCampaign(arr[0].id);
         }
@@ -304,9 +387,36 @@ export default function Topbar({ onOpenSidebar }) {
       if (locked) return;
       selectCampaign(id);
     };
+
+    const onUpdated = (e) => {
+      const id = String(e?.detail?.id ?? "");
+      if (!id) return;
+      if (String(id) !== String(selectedCampaignId)) return;
+
+      const step = String(e?.detail?.step ?? "");
+      if (step === "preflight") {
+        setCampaign((c) => c);
+        return;
+      }
+
+      (async () => {
+        try {
+          const data = await getCampaign(Number(selectedCampaignId));
+          setCampaign(data);
+        } catch {
+          // ignore
+        }
+      })();
+    };
+
     window.addEventListener(CAMPAIGN_SELECTED_EVENT, onSelected);
-    return () => window.removeEventListener(CAMPAIGN_SELECTED_EVENT, onSelected);
-  }, [locked, selectCampaign]);
+    window.addEventListener(CAMPAIGN_UPDATED_EVENT, onUpdated);
+
+    return () => {
+      window.removeEventListener(CAMPAIGN_SELECTED_EVENT, onSelected);
+      window.removeEventListener(CAMPAIGN_UPDATED_EVENT, onUpdated);
+    };
+  }, [locked, selectCampaign, selectedCampaignId]);
 
   const toggleLock = () => {
     setLocked((v) => {
@@ -341,13 +451,21 @@ export default function Topbar({ onOpenSidebar }) {
     start(def.to(hasCampaign ? selectedCampaignId : ""));
   };
 
+  const MANUAL_TOGGLE_KEYS = new Set(["review", "launch"]);
+
   const handleStepClick = (stepKey) => {
     if (stepKey !== currentStep) {
       setCurrentStep(stepKey);
       goToStep(stepKey);
       return;
     }
-    toggleCompleted(stepKey);
+
+    if (MANUAL_TOGGLE_KEYS.has(stepKey)) {
+      toggleCompleted(stepKey);
+      return;
+    }
+
+    goToStep(stepKey);
   };
 
   return (
@@ -365,9 +483,7 @@ export default function Topbar({ onOpenSidebar }) {
         </button>
 
         <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-            Kampaň
-          </span>
+          <span className="shrink-0 text-[11px] font-semibold text-slate-700 dark:text-slate-200">Kampaň</span>
 
           <CampaignDropdown
             value={selectedCampaignId || NONE_ID}
@@ -377,45 +493,57 @@ export default function Topbar({ onOpenSidebar }) {
             onChange={selectCampaign}
           />
 
-          {/* rezervované místo, aby nic neskákalo */}
-          <div className="relative h-6 w-6 shrink-0">
-            <AnimatePresence initial={false}>
-              {hasCampaign ? (
-                <motion.button
-                  key="lock"
-                  type="button"
-                  onClick={toggleLock}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.96 }}
-                  transition={{ duration: 0.18, ease: "easeOut" }}
-                  className={[
-                    "absolute inset-0 inline-flex items-center justify-center",
-                    "h-6 w-6 rounded-lg border",
-                    locked
-                      ? "bg-[var(--brand-strong)] border-[var(--brand-strong)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
-                      : "bg-white/14 border-white/35 text-[var(--brand-strong)] hover:bg-white/24",
-                    "dark:border-white/10 dark:bg-white/6",
-                  ].join(" ")}
-                  title={locked ? "Odemknout výběr kampaně" : "Zamknout výběr kampaně"}
-                  aria-label={locked ? "Odemknout" : "Zamknout"}
-                >
-                  {locked ? (
-                    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
-                      <path d="M17 8h-1V6a4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-6 9.73V18a1 1 0 002 0v-.27a2 2 0 10-2 0zM10 8V6a2 2 0 114 0v2h-4z" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
-                      <path d="M17 8h-7V6a2 2 0 114 0 1 1 0 102 0 4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-4 9.73V18a1 1 0 002 0v-.27a2 2 0 10-2 0z" />
-                    </svg>
-                  )}
-                </motion.button>
-              ) : null}
-            </AnimatePresence>
+          <div className="flex items-center gap-1 shrink-0">
+            {hasCampaign && (
+              <button
+                type="button"
+                onClick={() => selectCampaign(NONE_ID)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-white/35 bg-white/14 text-slate-700 hover:bg-white/24 dark:border-white/10 dark:bg-white/6 dark:text-slate-200"
+                title="Zrušit aktuální kampaň"
+                aria-label="Zrušit aktuální kampaň"
+              >
+                ×
+              </button>
+            )}
+
+            <div className="relative h-6 w-6">
+              <AnimatePresence initial={false}>
+                {hasCampaign ? (
+                  <motion.button
+                    key="lock"
+                    type="button"
+                    onClick={toggleLock}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className={[
+                      "absolute inset-0 inline-flex items-center justify-center",
+                      "h-6 w-6 rounded-lg border",
+                      locked
+                        ? "bg-[var(--brand-strong)] border-[var(--brand-strong)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
+                        : "bg-white/14 border-white/35 text-[var(--brand-strong)] hover:bg-white/24",
+                      "dark:border-white/10 dark:bg-white/6",
+                    ].join(" ")}
+                    title={locked ? "Odemknout výběr kampaně" : "Zamknout výběr kampaně"}
+                    aria-label={locked ? "Odemknout" : "Zamknout"}
+                  >
+                    {locked ? (
+                      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
+                        <path d="M17 8h-1V6a4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-6 9.73V18a1 1 0 002 0v-.27a2 2 0 10-2 0zM10 8V6a2 2 0 114 0v2h-4z" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
+                        <path d="M17 8h-7V6a2 2 0 114 0 1 1 0 102 0 4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-4 9.73V18a1 1 0 002 0v-.27a2 2 0 10-2 0z" />
+                      </svg>
+                    )}
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
-        {/* vždy stejná “oblast” vpravo -> žádný layout shift, jen fade */}
         <div className="ml-auto flex-1 min-h-[38px] overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <AnimatePresence initial={false}>
             {hasCampaign ? (
@@ -433,7 +561,7 @@ export default function Topbar({ onOpenSidebar }) {
                     const done = !!completed[s.key];
 
                     const base =
-                      "group relative flex w-[66px] shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-0.5 text-center transition";
+                      `group relative flex ${s.key === "targets" ? "w-[92px]" : "w-[74px]"} shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-0.5 text-center transition`;
                     const state = active
                       ? "bg-white/22 dark:bg-white/5 border-white/35 dark:border-white/10 " +
                         "shadow-[inset_0_0_0_1px_rgba(46,36,211,0.35),inset_0_0_14px_rgba(71,101,238,0.18)]"
@@ -445,7 +573,9 @@ export default function Topbar({ onOpenSidebar }) {
                         : "bg-white/22 dark:bg-white/8";
 
                     const badgeTxt =
-                      active || done ? "text-[var(--brand-strong)]" : "text-slate-700 dark:text-slate-200";
+                      active || done
+                        ? "text-[var(--brand-strong)]"
+                        : "text-slate-700 dark:text-slate-200";
 
                     const labelTxt =
                       active ? "text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-200";
@@ -456,10 +586,16 @@ export default function Topbar({ onOpenSidebar }) {
                         type="button"
                         onClick={() => handleStepClick(s.key)}
                         className={[base, state].join(" ")}
-                        title={s.label}
+                        title={s.title || (typeof s.label === "string" ? s.label : "")}
                       >
                         <div className={["flex h-6 w-6 items-center justify-center rounded-xl", badge].join(" ")}>
-                          <span className={["font-extrabold leading-none", badgeTxt, done ? "text-[14px]" : "text-[15px]"].join(" ")}>
+                          <span
+                            className={[
+                              "font-extrabold leading-none",
+                              badgeTxt,
+                              done ? "text-[14px]" : "text-[15px]",
+                            ].join(" ")}
+                          >
                             {done ? "✓" : idx + 1}
                           </span>
                         </div>

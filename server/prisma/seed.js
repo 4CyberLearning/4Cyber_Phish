@@ -9,25 +9,39 @@ async function main() {
     create: { name: 'Demo Tenant', slug: 'demo' }
   })
 
+  const isProd = process.env.NODE_ENV === 'production'
+
   const admins = [
     {
-      email: process.env.ADMIN1_EMAIL || 'dpirkl@4cyber.cz',
-      password: process.env.ADMIN1_PASSWORD || '3Cq2U!rtY4Vhz&B3Jcp^Q0svN0ar*c2',
-      fullName: process.env.ADMIN1_NAME || 'Admin DP',
+      email: process.env.ADMIN1_EMAIL ?? (isProd ? undefined : 'dpirkl@4cyber.cz'),
+      password: process.env.ADMIN1_PASSWORD ?? (isProd ? undefined : '3Cq2U!rtY4Vhz&B3Jcp^Q0svN0ar*c2'),
+      fullName: process.env.ADMIN1_NAME ?? 'Admin DP',
     },
     {
-      email: process.env.ADMIN2_EMAIL || 'jjancar@4cyber.cz',
-      password: process.env.ADMIN2_PASSWORD || 'ww92f2MebJ2!X@YHv&XStMPdh6PhnN08',
-      fullName: process.env.ADMIN2_NAME || 'Admin JJ',
+      email: process.env.ADMIN2_EMAIL ?? (isProd ? undefined : 'jjancar@4cyber.cz'),
+      password: process.env.ADMIN2_PASSWORD ?? (isProd ? undefined : 'ww92f2MebJ2!X@YHv&XStMPdh6PhnN08'),
+      fullName: process.env.ADMIN2_NAME ?? 'Admin JJ',
+    },
+    {
+      email: process.env.ADMIN3_EMAIL ?? (isProd ? undefined : 'lpirkl@4cyber.cz'),
+      password: process.env.ADMIN3_PASSWORD ?? (isProd ? undefined : '62iejKLM4h5N0UzPBVuHkL'),
+      fullName: process.env.ADMIN3_NAME ?? 'Admin LP',
+    },
+    {
+      email: process.env.ADMIN4_EMAIL ?? (isProd ? undefined : 'jsommer@4cyber.cz'),
+      password: process.env.ADMIN4_PASSWORD ?? (isProd ? undefined : 'nv4GNmuA798mp8P9d6Psa5'),
+      fullName: process.env.ADMIN4_NAME ?? 'Admin JS',
     },
   ]
 
-  if (process.env.NODE_ENV === 'production') {
-    for (const a of admins) {
+
+  if (isProd) {
+    admins.forEach((a, i) => {
+      const n = i + 1
       if (!a.email || !a.password || a.password.startsWith('CHANGE_ME')) {
-        throw new Error('Set ADMIN1_EMAIL/ADMIN1_PASSWORD and ADMIN2_EMAIL/ADMIN2_PASSWORD in production env.')
+        throw new Error(`Set ADMIN${n}_EMAIL and ADMIN${n}_PASSWORD in production env.`)
       }
-    }
+    })
   }
 
   for (const a of admins) {
@@ -97,4 +111,11 @@ async function main() {
   })
 }
 
-main().finally(()=>prisma.$disconnect())
+main()
+  .catch((e) => {
+    console.error(e)
+    process.exitCode = 1
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })

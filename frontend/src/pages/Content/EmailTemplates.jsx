@@ -13,6 +13,7 @@ import AssetPickerModal from "../../components/AssetPickerModal";
 import { EMAIL_TEMPLATES_HELP } from "./emailTemplatesHelpContent";
 import { createPortal } from "react-dom";
 import { updateCampaign } from "../../api/campaigns";
+import { useCurrentCampaign } from "../../hooks/useCurrentCampaign";
 
 const EMPTY_TEMPLATE = {
   id: null,
@@ -209,6 +210,10 @@ export default function EmailTemplatesPage() {
   const { t } = useTranslation();
   const quillRef = useRef(null);
 
+  const { hasCampaign, campaign } = useCurrentCampaign();
+  const campaignEmailTemplateId = campaign?.emailTemplateId ?? campaign?.emailTemplate?.id;
+  const isInCurrentCampaign = (tplId) => hasCampaign && Number(campaignEmailTemplateId) === Number(tplId);
+
   const [templates, setTemplates] = useState([]);
   const [viewMode, setViewMode] = useState("select"); // "select" | "edit"
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
@@ -238,7 +243,7 @@ export default function EmailTemplatesPage() {
 
   async function applyToCampaign(tpl) {
     const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
-    if (!campaignId) {
+    if (!campaignId || campaignId === "__none__") {
       window.alert("Nejdřív vyber kampaň v horním panelu.");
       return;
     }
@@ -647,13 +652,22 @@ export default function EmailTemplatesPage() {
               {filteredTemplates.map((tpl) => (
                   <div
                     key={tpl.id}
-                    className={`flex flex-col rounded-xl border px-3 py-2 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
+                    className={`relative flex flex-col rounded-xl border px-3 py-2 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
                       tpl.id === selectedTemplateId
                         ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]"
                         : "border-gray-300/70 bg-white"
+                    } ${
+                      isInCurrentCampaign(tpl.id)
+                        ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.25),0_0_16px_rgba(71,101,238,0.18)]"
+                        : ""
                     }`}
                     onClick={() => setSelectedTemplateId(tpl.id)}
                   >
+                    {isInCurrentCampaign(tpl.id) && (
+                      <span className="absolute right-2 top-2 rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                        V aktuální kampani
+                      </span>
+                    )}
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div>
                       <div className="font-medium text-gray-900">{tpl.name}</div>
@@ -711,7 +725,7 @@ export default function EmailTemplatesPage() {
                   )}
 
                   {/* 3 tlačítka: použít / editovat / smazat */}
-                  <div className="mt-auto grid grid-cols-4 gap-2 pt-2">                 
+                  <div className={`mt-auto grid gap-2 pt-2 ${hasCampaign ? "grid-cols-4" : "grid-cols-3"}`}>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -744,17 +758,23 @@ export default function EmailTemplatesPage() {
                     >
                       {t("common.delete") || "Smazat"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        applyToCampaign(tpl);
-                      }}
-                      disabled={applyingCampaign}
-                      className="rounded-md border border-slate-200/70 bg-white/20 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-                    >
-                      Do kampaně
-                    </button>                      
+                    {hasCampaign && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          applyToCampaign(tpl);
+                        }}
+                        disabled={applyingCampaign || isInCurrentCampaign(tpl.id)}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-60 ${
+                          isInCurrentCampaign(tpl.id)
+                            ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)] dark:bg-white/10"
+                            : "border-slate-200/70 bg-white/20 text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                        }`}
+                      >
+                        {isInCurrentCampaign(tpl.id) ? "V kampani" : "Do kampaně"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

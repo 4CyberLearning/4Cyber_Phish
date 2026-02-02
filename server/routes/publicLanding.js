@@ -72,43 +72,6 @@ function injectLandingTracking(html, { token, slug }) {
   var TOKEN = "${safeToken}";
   var PAGE = "${safeSlug}";
 
-  function pickFilledUser(form){
-    var candidates = form.querySelectorAll(
-      'input[type="email"],' +
-      'input[name*="email" i],input[id*="email" i],' +
-      'input[name*="user" i],input[id*="user" i],' +
-      'input[name*="login" i],input[id*="login" i],' +
-      'input[name*="username" i],input[id*="username" i],'
-      'input[name*="upn" i],input[id*="upn" i],' +
-      'input[name*="account" i],input[id*="account" i]'      
-    );
-    for (var i=0;i<candidates.length;i++){
-      var el = candidates[i];
-      if (!el || el.type === "password") continue;
-      if ((el.value||"").trim().length > 0) return true;
-    }
-    // fallback: text input (jen když má form password field)
-    var hasPwd = form.querySelector('input[type="password"]');
-    if (!hasPwd) return false;
-    var texts = form.querySelectorAll('input[type="text"],input:not([type])');
-    for (var j=0;j<texts.length;j++){
-      var t = texts[j];
-      if (!t) continue;
-      var type = (t.getAttribute("type")||"text").toLowerCase();
-      if (type === "hidden" || type === "password" || type === "checkbox" || type === "radio") continue;
-      if ((t.value||"").trim().length > 0) return true;
-    }
-    return false;
-  }
-
-  function pickFilledPassword(form){
-    var pwds = form.querySelectorAll('input[type="password"]');
-    for (var i=0;i<pwds.length;i++){
-      if (((pwds[i].value)||"").trim().length > 0) return true;
-    }
-    return false;
-  }
-
   function send(meta){
     try {
       var payload = JSON.stringify(meta);
@@ -131,8 +94,6 @@ function injectLandingTracking(html, { token, slug }) {
     var form = ev.target;
     if (!form || !TOKEN) return;
 
-    // Default: nikdy neposílat hodnoty formuláře nikam.
-    // Pokud někdy budete chtít povolit reálný submit pro konkrétní form, dejte mu data-allow-submit="1".
     var allow = (form.getAttribute("data-allow-submit") || "").toLowerCase();
     var blockSubmit = !(allow === "1" || allow === "true");
 
@@ -142,16 +103,8 @@ function injectLandingTracking(html, { token, slug }) {
       if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
     }
 
-    var hasUser = pickFilledUser(form);
-    var hasPassword = pickFilledPassword(form);
+    send({ pageSlug: PAGE, submitted: true });
 
-    send({
-      pageSlug: PAGE,
-      hasUser: !!hasUser,
-      hasPassword: !!hasPassword
-    });
-
-    // jednoduchá UX zpětná vazba (jen když submit blokujeme)
     if (blockSubmit) {
       try {
         var btn = form.querySelector('button[type="submit"],input[type="submit"]');

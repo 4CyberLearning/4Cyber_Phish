@@ -25,7 +25,8 @@ async function getTenantId() {
 
 function normalizeDomainInput(body = {}) {
   let rawDomain = String(body.domain || "").trim().toLowerCase();
-  const label = body.label ? String(body.label).trim() : null;
+  const labelRaw = body.label ?? body.description ?? null;
+  const label = labelRaw ? String(labelRaw).trim() : null;
   const isDefault = Boolean(body.isDefault);
 
   if (!rawDomain) {

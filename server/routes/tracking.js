@@ -139,14 +139,12 @@ router.post("/s/:token", async (req, res) => {
     });
     if (!cu) return res.status(404).json({ ok: false });
 
-    const pageSlug = typeof req.body?.pageSlug === "string" ? req.body.pageSlug.slice(0, 200) : null;
-    const hasUser = !!req.body?.hasUser;
-    const hasPassword = !!req.body?.hasPassword;
+    const pageSlug =
+      typeof req.body?.pageSlug === "string" ? req.body.pageSlug.slice(0, 200) : null;
 
     await recordInteraction(cu, InteractionType.SUBMITTED, {
       pageSlug,
-      hasUser,
-      hasPassword,
+      submitted: true,
     });
 
     return res.json({ ok: true });

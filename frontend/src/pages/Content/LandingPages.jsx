@@ -10,6 +10,7 @@ import {
 import AssetPickerModal from "../../components/AssetPickerModal";
 import { LANDING_PAGES_HELP } from "./landingPagesHelpContent";
 import { updateCampaign } from "../../api/campaigns";
+import { useCurrentCampaign } from "../../hooks/useCurrentCampaign";
 
 const EMPTY_PAGE = {
   id: null,
@@ -170,6 +171,9 @@ function LandingPagesHelpModal({ open, onClose }) {
 
 export default function LandingPagesPage() {
   const { t } = useTranslation();
+  const { hasCampaign, campaign } = useCurrentCampaign();
+  const campaignLandingPageId = campaign?.landingPageId ?? campaign?.landingPage?.id;
+  const isInCurrentCampaign = (pageId) => hasCampaign && Number(campaignLandingPageId) === Number(pageId);
   const [pages, setPages] = useState([]);
   const [viewMode, setViewMode] = useState("select"); // "select" | "edit"
   const [selectedId, setSelectedId] = useState(null);
@@ -191,7 +195,7 @@ export default function LandingPagesPage() {
 
   async function applyToCampaign(page) {
     const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
-    if (!campaignId) {
+    if (!campaignId || campaignId === "__none__") {
       window.alert("Nejdřív vyber kampaň v horním panelu.");
       return;
     }
@@ -598,13 +602,22 @@ export default function LandingPagesPage() {
               {filteredPages.map((page) => (
                 <div
                   key={page.id}
-                  className={`flex flex-col rounded-xl border bg-white p-3 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
+                  className={`relative flex flex-col rounded-xl border bg-white p-3 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
                     page.id === selectedId
                       ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]"
                       : "border-gray-200"
+                  } ${
+                    isInCurrentCampaign(page.id)
+                      ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.25),0_0_16px_rgba(71,101,238,0.18)]"
+                      : ""
                   }`}
                   onClick={() => setSelectedId(page.id)}
                 >
+                  {isInCurrentCampaign(page.id) && (
+                    <span className="absolute right-2 top-2 rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                      V aktuální kampani
+                    </span>
+                  )}
                   <div className="mb-2">
                     <div className="min-w-0">
                       <div className="truncate font-medium text-gray-900">{page.name}</div>
@@ -651,7 +664,7 @@ export default function LandingPagesPage() {
                     </div>
                   )}
 
-                  <div className="mt-auto grid grid-cols-4 gap-2 pt-2">
+                  <div className={`mt-auto grid gap-2 pt-2 ${hasCampaign ? "grid-cols-4" : "grid-cols-3"}`}>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -685,17 +698,23 @@ export default function LandingPagesPage() {
                     >
                       {t("common.delete") || "Smazat"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        applyToCampaign(page);
-                      }}
-                      disabled={applyingCampaign}
-                      className="rounded-md border border-slate-200/70 bg-white/20 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-                    >
-                      Do kampaně
-                    </button>                    
+                    {hasCampaign && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          applyToCampaign(page);
+                        }}
+                        disabled={applyingCampaign || isInCurrentCampaign(page.id)}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-60 ${
+                          isInCurrentCampaign(page.id)
+                            ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)] dark:bg-white/10"
+                            : "border-slate-200/70 bg-white/20 text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                        }`}
+                      >
+                        {isInCurrentCampaign(page.id) ? "V kampani" : "Do kampaně"}
+                      </button>
+                    )}                   
                   </div>
                 </div>
               ))}

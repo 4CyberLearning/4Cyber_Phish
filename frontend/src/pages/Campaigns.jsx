@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouteTransition } from "../transition/RouteTransition";
 import { listCampaigns } from "../api/campaigns";
+import { useNavigate } from "react-router-dom";
+
+const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
+const CAMPAIGN_CHANGED_EVENT = "campaign:changed";
 
 export default function Campaigns() {
+  const navigate = useNavigate();
   const { start } = useRouteTransition();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,6 +18,32 @@ export default function Campaigns() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+
+  const [currentCampaignId, setCurrentCampaignId] = useState(() => {
+    try {
+      return localStorage.getItem(SELECTED_CAMPAIGN_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+
+  useEffect(() => {
+    const onSelected = (e) => setCurrentCampaignId(String(e?.detail?.id ?? ""));
+    const onStorage = (ev) => {
+      if (ev.key !== SELECTED_CAMPAIGN_KEY) return;
+      setCurrentCampaignId(String(ev.newValue || ""));
+    };
+
+    window.addEventListener(CAMPAIGN_SELECTED_EVENT, onSelected);
+    window.addEventListener(CAMPAIGN_CHANGED_EVENT, onSelected);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(CAMPAIGN_SELECTED_EVENT, onSelected);
+      window.removeEventListener(CAMPAIGN_CHANGED_EVENT, onSelected);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -70,12 +102,10 @@ export default function Campaigns() {
     });
   }, [campaigns, statusFilter, search]);
 
-  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
-  const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
-
   function handleManage(id) {
     const strId = String(id);
     localStorage.setItem(SELECTED_CAMPAIGN_KEY, strId);
+    setCurrentCampaignId(strId);
     window.dispatchEvent(new CustomEvent(CAMPAIGN_SELECTED_EVENT, { detail: { id: strId } }));
     start(`/campaigns/${id}`);
   }
@@ -259,11 +289,31 @@ export default function Campaigns() {
                     c.userCount ||
                     0;
 
+                  const isCurrent =
+                    currentCampaignId && Number(currentCampaignId) === Number(c.id);
+
                   return (
-                    <tr key={c.id} className="border-b last:border-b-0">
-                      <td className="p-2 align-top">
-                        <div className="font-medium text-gray-900">
-                          {c.name}
+                    <tr
+                      key={c.id}
+                      className={`border-b last:border-b-0 ${
+                        isCurrent ? "bg-[var(--brand-soft)]/30" : ""
+                      }`}
+                    >
+                      <td
+                        className={`p-2 align-top ${
+                          isCurrent ? "border-l-4 border-[var(--brand-strong)]" : ""
+                        }`}
+                      >
+
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-gray-900">
+                            {c.name}
+                          </div>
+                          {isCurrent && (
+                            <span className="rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                              Aktuální kampaň
+                            </span>
+                          )}
                         </div>
                         {c.description && (
                           <div className="mt-0.5 text-[11px] text-gray-500">

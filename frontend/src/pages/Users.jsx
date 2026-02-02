@@ -10,6 +10,8 @@ import {
   createGroup,
   deleteGroup,
 } from "../api/users";
+import { updateCampaign } from "../api/campaigns";
+import { useCurrentCampaign } from "../hooks/useCurrentCampaign";
 
 const EMPTY_USER = {
   id: null,
@@ -22,6 +24,18 @@ const EMPTY_USER = {
 
 export default function UsersPage() {
   const { t } = useTranslation();
+  const { hasCampaign, campaignId, campaign } = useCurrentCampaign();
+  const campaignUserIdSet = useMemo(() => {
+    const set = new Set();
+    const items = campaign?.targetUsers || [];
+    for (const cu of items) {
+      const uid = cu?.userId ?? cu?.user?.id;
+      if (uid) set.add(Number(uid));
+    }
+    return set;
+  }, [campaign]);
+  const isInCurrentCampaign = (userId) =>
+    hasCampaign && campaignUserIdSet.has(Number(userId));
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedGroupKey, setSelectedGroupKey] = useState("all"); // "all" | "ungrouped" | groupId
@@ -31,6 +45,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState(null);
+  const [applyingToCampaign, setApplyingToCampaign] = useState(false);
   const [success, setSuccess] = useState(null);
 
   useEffect(() => {
@@ -95,6 +110,25 @@ export default function UsersPage() {
       u.groups?.some((g) => g.id === groupId)
     );
   }, [users, selectedGroupKey]);
+
+  async function applyFilteredToCampaign() {
+    if (!hasCampaign) return;
+
+    const userIds = filteredUsers.map((u) => u.id).filter((id) => Number.isInteger(id) || typeof id === "number");
+    setApplyingToCampaign(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await updateCampaign(Number(campaignId), { userIds });
+      window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId) } }));
+      setSuccess(`Příjemci kampaně byli nastaveni (${userIds.length}).`);
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se nastavit příjemce do kampaně.");
+    } finally {
+      setApplyingToCampaign(false);
+    }
+  }
 
   function handleSelectUser(u) {
     setSelectedUserId(u.id);
@@ -357,6 +391,17 @@ export default function UsersPage() {
             >
               {t("content.recipients.actions.newGroup") || "Nová skupina"}
             </button>
+            {hasCampaign && (
+              <button
+                type="button"
+                onClick={applyFilteredToCampaign}
+                disabled={applyingToCampaign || filteredUsers.length === 0}
+                title="Nastaví aktuálně vyfiltrované příjemce do aktuální kampaně (přepíše stávající seznam)."
+                className="rounded-full border border-[var(--brand-strong)]/40 bg-[var(--brand-strong)]/5 px-3 py-1 text-xs font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
+              >
+                Nastavit filtr do kampaně ({filteredUsers.length})
+              </button>
+            )}
             <button
               type="button"
               onClick={resetForm}
@@ -484,9 +529,15 @@ export default function UsersPage() {
             <div className="flex flex-col gap-4">
               {/* tabulka uživatelů */}
               <div className="rounded-lg border border-gray-200">
-                <div className="border-b border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700">
-                  {t("content.recipients.users.title") ||
-                    "Příjemci (uživatelé)"}
+                <div className="border-b border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 flex items-center justify-between">
+                  <span>
+                    {t("content.recipients.users.title") || "Příjemci (uživatelé)"}
+                  </span>
+                  {hasCampaign && (
+                    <span className="text-[11px] font-normal text-gray-500">
+                      V kampani: {campaignUserIdSet.size}
+                    </span>
+                  )}
                 </div>
                 {filteredUsers.length === 0 ? (
                   <div className="px-3 py-3 text-xs text-gray-500">
@@ -511,12 +562,21 @@ export default function UsersPage() {
                             key={u.id}
                             onClick={() => handleSelectUser(u)}
                             className={`cursor-pointer hover:bg-[var(--brand-soft)] ${
-                              u.id === selectedUserId
-                                ? "bg-[var(--brand-soft)]"
-                                : ""
+                              u.id === selectedUserId ? "bg-[var(--brand-soft)]" : ""
+                            } ${
+                              isInCurrentCampaign(u.id) ? "bg-[var(--brand-soft)]/30" : ""
                             }`}
                           >
-                            <td className="px-3 py-1.5">{u.email}</td>
+                            <td className={`px-3 py-1.5 ${isInCurrentCampaign(u.id) ? "border-l-4 border-[var(--brand-strong)]" : ""}`}>
+                              <div className="flex items-center gap-2">
+                                <span>{u.email}</span>
+                                {isInCurrentCampaign(u.id) && (
+                                  <span className="rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                                    V aktuální kampani
+                                  </span>
+                                )}
+                              </div>
+                            </td>
                             <td className="px-3 py-1.5">
                               {u.fullName || <span className="text-gray-400">–</span>}
                             </td>
