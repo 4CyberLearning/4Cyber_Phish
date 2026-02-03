@@ -12,6 +12,9 @@ RUN npx prisma generate
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update \
+  && apt-get install -y openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app ./
 EXPOSE 5000
-CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed.js && node index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node index.js"]
