@@ -293,7 +293,7 @@ export default function Topbar({ onOpenSidebar }) {
       targets: recipientsCount(campaign) > 0,
       preflight: readPreflightDone(selectedCampaignId),
       launch: ["ACTIVE", "FINISHED", "COMPLETED", "CANCELED"].includes(String(campaign?.status || "").toUpperCase()),
-w    };
+    };
   }, [hasCampaign, campaign, selectedCampaignId]);
 
   const completed = useMemo(() => {
