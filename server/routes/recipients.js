@@ -77,6 +77,34 @@ function normalizeUserInput(body = {}) {
   return { email, fullName, department, role, groupIds: normalizedGroupIds };
 }
 
+function domainOfEmail(email) {
+  const s = String(email || "").trim().toLowerCase();
+  const at = s.lastIndexOf("@");
+  if (at <= 0) return null;
+  return s.slice(at + 1);
+}
+
+async function assertRecipientEmailAllowed(tenantId, email) {
+  // Backward compatible: pokud není nastaven žádný allowlist, neblokuj.
+  const allowlistCount = await prisma.allowedRecipientDomain.count({
+    where: { tenantId },
+  });
+  if (allowlistCount === 0) return;
+
+  const domain = domainOfEmail(email);
+  if (!domain) throw new Error("Invalid email address");
+
+  const allowed = await prisma.allowedRecipientDomain.count({
+    where: { tenantId, domain },
+  });
+
+  if (allowed === 0) {
+    throw new Error(
+      `Doména příjemce není povolená: ${domain}. Přidej ji v Settings → Recipient domains.`
+    );
+  }
+}
+
 function formatUser(row) {
   return {
     id: row.id,
@@ -250,11 +278,11 @@ router.post("/users", async (req, res) => {
     const tenantId = await getTenantId();
     const { email, fullName, department, role, groupIds } =
       normalizeUserInput(req.body || {});
-
+    
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
-
+    await assertRecipientEmailAllowed(tenantId, email);
     const existing = await prisma.user.findFirst({
       where: { tenantId, email },
     });
@@ -322,9 +350,8 @@ router.put("/users/:id", async (req, res) => {
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
-
+    await assertRecipientEmailAllowed(tenantId, email);
     await prisma.groupMember.deleteMany({ where: { userId: id } });
-
     await prisma.user.update({
       where: { id },
       data: {

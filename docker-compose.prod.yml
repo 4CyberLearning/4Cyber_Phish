@@ -37,7 +37,8 @@ services:
       SESSION_MAX_AGE_MS: ${SESSION_MAX_AGE_MS:-604800000}
 
       SMTP_HOST: ${SMTP_HOST}   # TODO doplnit doménu
-      SMTP_PORT: "25"
+      SMTP_PORT: ${SMTP_PORT:-587}
+      EMAIL_SENDING_ENABLED: ${EMAIL_SENDING_ENABLED:-false}
       SMTP_SECURE: "false"
       SMTP_FROM: ${SMTP_FROM}
 

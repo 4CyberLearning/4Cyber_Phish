@@ -7,6 +7,39 @@ import prisma from "../db/prisma.js";
 
 const router = Router();
 
+function toSet(value) {
+  if (!value) return new Set();
+  return new Set(
+    String(value)
+      .split(/[,\s;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+async function buildSendPolicy(tenantId) {
+  const envAllowedRecipients = toSet(process.env.ALLOWED_RECIPIENTS || "");
+  const envAllowedDomains = toSet(process.env.ALLOWED_RECIPIENT_DOMAINS || "");
+  const envAllowedFromDomains = toSet(process.env.ALLOWED_FROM_DOMAINS || "");
+
+  const dbDomains = await prisma.allowedRecipientDomain.findMany({
+    where: { tenantId },
+    select: { domain: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const allowedRecipientDomains = new Set([
+    ...envAllowedDomains,
+    ...dbDomains.map((d) => String(d.domain).trim().toLowerCase()).filter(Boolean),
+  ]);
+
+  return {
+    allowedRecipients: envAllowedRecipients,
+    allowedRecipientDomains,
+    allowedFromDomains: envAllowedFromDomains,
+  };
+}
+
 const DEFAULT_TENANT_SLUG = "demo";
 
 async function getTenantId() {
@@ -269,6 +302,7 @@ router.post('/campaigns', async (req, res) => {
 
 // pomocná funkce – odeslání mailů a zapsání EMAIL_SENT
 async function sendCampaignEmails(campaignId, tenantId) {
+  const sendPolicy = await buildSendPolicy(tenantId);
   const campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, tenantId },
     include: {
@@ -326,6 +360,7 @@ async function sendCampaignEmails(campaignId, tenantId) {
       to: cu.user.email,
       subject: campaign.emailTemplate.subject,
       html: htmlTracked,
+      policy: sendPolicy,
     });
 
     // 4) zapsat EMAIL_SENT + agregace
@@ -356,9 +391,11 @@ async function sendCampaignEmails(campaignId, tenantId) {
 
 // POST /api/campaigns/:id/send-now – okamžité odeslání kampaně
 router.post('/campaigns/:id/send-now', async (req, res) => {
+  /*
   if (process.env.EMAIL_SENDING_ENABLED !== "true") {
     return res.status(403).json({ error: "Email sending je vypnuté (EMAIL_SENDING_ENABLED=false)." });
   }
+  */
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: 'Invalid id' });

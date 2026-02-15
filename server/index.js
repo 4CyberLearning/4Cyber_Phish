@@ -24,6 +24,7 @@ import senderIdentitiesRouter from "./routes/senderIdentities.js";
 import senderDomainsRouter from "./routes/senderDomains.js";
 import campaignReportsRouter from "./routes/campaignReports.js";
 import publicLandingRouter from "./routes/publicLanding.js";
+import recipientDomainsRouter from "./routes/recipientDomains.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -139,7 +140,6 @@ const apiLimiter = rateLimit({
 });
 
 app.use("/api", requireAuth, apiLimiter);
-
 app.use("/api/templates", templatesRouter);
 app.use("/api/assets", assetsRouter);
 app.use("/api", senderDomainsRouter);
@@ -149,6 +149,7 @@ app.use("/api", campaignReportsRouter);
 app.use("/api/debug", debugRouter);
 app.use("/api", recipientsRouter);
 app.use("/api/landing-pages", landingPagesRouter);
+app.use("/api", recipientDomainsRouter);
 
 // ---------- Error handler ----------
 app.use((err, _req, res, _next) => {

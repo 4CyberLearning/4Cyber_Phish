@@ -53,6 +53,7 @@ model Tenant {
   assets           Asset[]
   senderIdentities SenderIdentity[]
   senderDomains    SenderDomain[]
+  allowedRecipientDomains AllowedRecipientDomain[]
 }
 
 model SenderDomain {
@@ -66,6 +67,19 @@ model SenderDomain {
   createdAt DateTime @default(now())
 
   identities SenderIdentity[]
+
+  @@unique([tenantId, domain])
+}
+
+model AllowedRecipientDomain {
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  domain    String
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([tenantId, domain])
 }

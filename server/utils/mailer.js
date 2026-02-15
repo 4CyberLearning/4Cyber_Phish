@@ -17,7 +17,7 @@ const {
   SMTP_FROM = "App <no-reply@dev.local>",
 
   ALLOWED_RECIPIENTS = "",
-  ALLOWED_RECIPIENT_DOMAINS = "verify-ms.com",
+  ALLOWED_RECIPIENT_DOMAINS = "",
 } = process.env;
 
 const isProd = NODE_ENV === "production";
@@ -38,28 +38,25 @@ async function refreshAuth() {
   transporter.options.auth = await getSmtpAuthConfig();
 }
 
-const allowedRecipients = new Set(
-  ALLOWED_RECIPIENTS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
-
-const allowedDomains = new Set(
-  ALLOWED_RECIPIENT_DOMAINS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
-
-const allowedFromDomains = new Set(
-  ALLOWED_FROM_DOMAINS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
-
-if (
-  isProd &&
-  emailSendingEnabled &&
-  REQUIRE_ALLOWLIST_IN_PROD === "true" &&
-  !allowedRecipients.size &&
-  !allowedDomains.size
-) {
-  throw new Error(
-    "EMAIL_SENDING_ENABLED=true v produkci vyžaduje ALLOWED_RECIPIENTS nebo ALLOWED_RECIPIENT_DOMAINS."
+function toSet(list) {
+  if (!list) return new Set();
+  if (Array.isArray(list)) {
+    return new Set(list.map((s) => String(s).trim().toLowerCase()).filter(Boolean));
+  }
+  return new Set(
+    String(list)
+      .split(/[,\s;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
   );
+}
+
+function getPolicyFromEnv() {
+  return {
+    allowedRecipients: toSet(process.env.ALLOWED_RECIPIENTS || ""),
+    allowedRecipientDomains: toSet(process.env.ALLOWED_RECIPIENT_DOMAINS || ""),
+    allowedFromDomains: toSet(process.env.ALLOWED_FROM_DOMAINS || ""),
+  };
 }
 
 function normalizeToList(to) {
@@ -83,7 +80,10 @@ function domainOfEmail(addr) {
   return email.slice(at + 1);
 }
 
-function isAllowedRecipient(addr) {
+function isAllowedRecipient(addr, policy) {
+  const allowedRecipients = policy.allowedRecipients;
+  const allowedDomains = policy.allowedRecipientDomains;
+
   if (!allowedRecipients.size && !allowedDomains.size) return true;
 
   const email = String(addr).trim().toLowerCase();
@@ -93,7 +93,8 @@ function isAllowedRecipient(addr) {
   return !!(domain && allowedDomains.has(domain));
 }
 
-function enforceFromDomain(fromValue) {
+function enforceFromDomain(fromValue, policy) {
+  const allowedFromDomains = policy.allowedFromDomains;
   if (!allowedFromDomains.size) return;
 
   const fromEmail = extractEmail(fromValue);
@@ -135,20 +136,31 @@ function enforceRateLimits() {
   }
 }
 
-export async function sendMail({ to, subject, html, from, replyTo }) {
+export async function sendMail({ to, subject, html, from, replyTo, policy }) {
   if (!emailSendingEnabled) {
     throw new Error("Email sending je vypnuté (EMAIL_SENDING_ENABLED=false).");
   }
 
+  const effectivePolicy = policy || getPolicyFromEnv();
+    if (
+    isProd &&
+    REQUIRE_ALLOWLIST_IN_PROD === "true" &&
+    !effectivePolicy.allowedRecipients.size &&
+    !effectivePolicy.allowedRecipientDomains.size
+  ) {
+    throw new Error(
+      "V produkci je vyžadován allowlist příjemců (ALLOWED_RECIPIENTS / ALLOWED_RECIPIENT_DOMAINS nebo DB recipient-domains)."
+    );
+  }
   const recipients = normalizeToList(to);
-  const blocked = recipients.filter((r) => !isAllowedRecipient(r));
+  const blocked = recipients.filter((r) => !isAllowedRecipient(r, effectivePolicy));
   if (blocked.length) {
     throw new Error(`Recipient not allowlisted: ${blocked.join(", ")}`);
   }
 
   const finalFrom = from || SMTP_FROM;
 
-  enforceFromDomain(finalFrom);
+  enforceFromDomain(finalFrom, effectivePolicy);
   enforceRateLimits();
 
   await refreshAuth();
