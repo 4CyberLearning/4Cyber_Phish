@@ -45,16 +45,12 @@ const envAllowedRecipients = toSet(ALLOWED_RECIPIENTS);
 const envAllowedDomains = toSet(ALLOWED_RECIPIENT_DOMAINS);
 const envAllowedFromDomains = toSet(ALLOWED_FROM_DOMAINS);
 
-if (
-  isProd &&
-  emailSendingEnabled &&
-  REQUIRE_ALLOWLIST_IN_PROD === "true" &&
-  !envAllowedRecipients.size &&
-  !envAllowedDomains.size
-) {
-  throw new Error(
-    "EMAIL_SENDING_ENABLED=true v produkci vyžaduje ALLOWED_RECIPIENTS nebo ALLOWED_RECIPIENT_DOMAINS (nebo předávej policy z DB)."
-  );
+function getPolicyFromEnv() {
+  return {
+    allowedRecipients: envAllowedRecipients,
+    allowedRecipientDomains: envAllowedDomains,
+    allowedFromDomains: envAllowedFromDomains,
+  };
 }
 
 function normalizeToList(to) {
@@ -140,52 +136,68 @@ function createTransport(auth) {
     port,
     secure,
     requireTLS: !secure && (port === 587 || port === 25),
-    auth,
+    auth, // <- klíčové: auth jde přímo do transportu
     tls: { minVersion: "TLSv1.2" },
     ...(smtpDebug ? { logger: true, debug: true } : {}),
   });
 }
 
-export async function sendMail({ smtpUser, to, subject, html, from, replyTo, policy } = {}) {
+export async function sendMail({ smtpUser, to, subject, html, from, replyTo, policy }) {
   if (!emailSendingEnabled) {
     throw new Error("Email sending je vypnuté (EMAIL_SENDING_ENABLED=false).");
   }
 
+  const effectivePolicy = policy || getPolicyFromEnv();
+
+  // v produkci vyžaduj allowlist, ale až při odesílání (ať může být z DB)
+  if (
+    isProd &&
+    REQUIRE_ALLOWLIST_IN_PROD === "true" &&
+    !effectivePolicy.allowedRecipients?.size &&
+    !effectivePolicy.allowedRecipientDomains?.size
+  ) {
+    throw new Error(
+      "EMAIL_SENDING_ENABLED=true v produkci vyžaduje allowlist (ALLOWED_RECIPIENTS / ALLOWED_RECIPIENT_DOMAINS nebo policy z DB)."
+    );
+  }
+
   const recipients = normalizeToList(to);
-  const blocked = recipients.filter((r) => !isAllowedRecipient(r, policy));
+  const blocked = recipients.filter((r) => !isAllowedRecipient(r, effectivePolicy));
   if (blocked.length) {
     throw new Error(`Recipient not allowlisted: ${blocked.join(", ")}`);
   }
 
   const finalFrom = from || SMTP_FROM;
-  enforceFromDomain(finalFrom, policy);
+  enforceFromDomain(finalFrom, effectivePolicy);
   enforceRateLimits();
 
   const auth = await getSmtpAuthConfig({ smtpUser });
-
-  // bezpečný log pro ověření, že auth fakt existuje (neprintuj token)
-  if (smtpDebug) {
-    console.log("[SMTP] auth:", { type: auth?.type, user: auth?.user, hasToken: !!auth?.accessToken });
-  }
-
   const transporter = createTransport(auth);
 
-  const info = await transporter.sendMail({
-    from: finalFrom,
-    to,
-    subject,
-    html,
-    ...(replyTo ? { replyTo } : {}),
-  });
+  try {
+    const info = await transporter.sendMail({
+      from: finalFrom,
+      to,
+      subject,
+      html,
+      ...(replyTo ? { replyTo } : {}),
+    });
 
-  sentThisMinute += 1;
-  sentToday += 1;
+    sentThisMinute += 1;
+    sentToday += 1;
 
-  return info;
+    return info;
+  } finally {
+    transporter.close?.();
+  }
 }
 
 export async function verifySmtp({ smtpUser } = {}) {
   const auth = await getSmtpAuthConfig({ smtpUser });
   const transporter = createTransport(auth);
-  return transporter.verify();
+  try {
+    return await transporter.verify();
+  } finally {
+    transporter.close?.();
+  }
 }
