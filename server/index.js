@@ -88,7 +88,8 @@ app.use(
     rolling: true, // prodlužuje session při aktivitě
     store: new PgSession({
       pool: pgPool,
-      tableName: "user_sessions",
+      schemaName: process.env.SESSION_DB_SCHEMA || "sessions",
+      tableName: process.env.SESSION_DB_TABLE || "user_sessions",
       createTableIfMissing: true,
     }),
     cookie: {
