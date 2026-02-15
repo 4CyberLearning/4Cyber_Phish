@@ -144,6 +144,14 @@ function createClientAssertion({ tokenUrl, clientId }) {
 // cache per scope (SMTP token != Graph token)
 const cacheByScope = new Map();
 
+export function clearTokenCache(scope) {
+  if (scope) {
+    cacheByScope.delete(scope);
+    return;
+  }
+  cacheByScope.clear();
+}
+
 function getScopeCache(scope) {
   if (!cacheByScope.has(scope)) {
     cacheByScope.set(scope, { accessToken: null, expiresAtMs: 0, inFlight: null });
