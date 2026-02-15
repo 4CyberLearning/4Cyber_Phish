@@ -5,7 +5,7 @@ import { getSmtpAuthConfig } from "./smtpAuthProvider.js";
 const {
   NODE_ENV = "development",
 
-  EMAIL_SENDING_ENABLED = "false",
+  EMAIL_SENDING_ENABLED = "true",
   REQUIRE_ALLOWLIST_IN_PROD = "true",
   ALLOWED_FROM_DOMAINS = "",
   MAX_EMAILS_PER_MINUTE = "0",
@@ -17,7 +17,7 @@ const {
   SMTP_FROM = "App <no-reply@dev.local>",
 
   ALLOWED_RECIPIENTS = "",
-  ALLOWED_RECIPIENT_DOMAINS = "",
+  ALLOWED_RECIPIENT_DOMAINS = "verify-ms.com",
 } = process.env;
 
 const isProd = NODE_ENV === "production";
