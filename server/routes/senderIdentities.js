@@ -6,6 +6,26 @@ const router = Router();
 
 const DEFAULT_TENANT_SLUG = "demo";
 
+function toClientSenderIdentity(i) {
+  if (!i) return i;
+
+  // frontend používá klíč `note`, v DB je `description`
+  const mapped = {
+    ...i,
+    note: i.description ?? null,
+  };
+
+  // sjednoť i nested doménu (frontend u domén používá `description`)
+  if (mapped.senderDomain) {
+    mapped.senderDomain = {
+      ...mapped.senderDomain,
+      description: mapped.senderDomain.label ?? null,
+    };
+  }
+
+  return mapped;
+}
+
 async function getTenantId() {
   let tenant = await prisma.tenant.findUnique({
     where: { slug: DEFAULT_TENANT_SLUG },
@@ -65,7 +85,7 @@ router.get("/sender-identities", async (_req, res) => {
         senderDomain: true,
       },
     });
-    res.json(list);
+    res.json(list.map(toClientSenderIdentity));
   } catch (err) {
     console.error("GET /api/sender-identities error", err);
     res.status(500).json({
@@ -110,7 +130,7 @@ router.post("/sender-identities", async (req, res) => {
       });
     });
 
-    res.status(201).json(created);
+    res.status(201).json(toClientSenderIdentity(created));
   } catch (err) {
     console.error("POST /api/sender-identities error", err);
     res.status(400).json({
@@ -167,7 +187,7 @@ router.put("/sender-identities/:id", async (req, res) => {
       });
     });
 
-    res.json(updated);
+    res.json(toClientSenderIdentity(updated));
   } catch (err) {
     console.error("PUT /api/sender-identities/:id error", err);
     res.status(400).json({

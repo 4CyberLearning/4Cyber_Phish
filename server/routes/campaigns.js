@@ -356,6 +356,9 @@ async function sendCampaignEmails(campaignId, tenantId) {
 
 // POST /api/campaigns/:id/send-now – okamžité odeslání kampaně
 router.post('/campaigns/:id/send-now', async (req, res) => {
+  if (process.env.EMAIL_SENDING_ENABLED !== "true") {
+    return res.status(403).json({ error: "Email sending je vypnuté (EMAIL_SENDING_ENABLED=false)." });
+  }
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: 'Invalid id' });

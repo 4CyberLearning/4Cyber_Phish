@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../db/prisma.js";
 import { sendMail, verifySmtp } from "../utils/mailer.js";
+import { getTokenDiagnostics, clearTokenCache } from "../utils/entraOauthClient.js";
 
 const router = Router();
 
@@ -17,6 +18,22 @@ router.get('/health', async (_req, res) => {
   } catch (e) {
     res.status(500).json({ smtp: 'fail', error: e.message });
   }
+});
+
+// OAuth healthcheck (app-only client credentials)
+// Nevrací token – jen diagnostiku a expiry.
+router.get("/oauth-health", async (_req, res) => {
+  try {
+    const info = await getTokenDiagnostics();
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/oauth-clear-cache", (_req, res) => {
+  clearTokenCache();
+  res.json({ ok: true });
 });
 
 router.get('/templates', async (req, res) => {
@@ -37,8 +54,12 @@ router.get('/landing-pages', async (req, res) => {
 
 // odeslání test mailu do MailHog
 router.post('/send-test', async (req, res) => {
+  if (process.env.EMAIL_SENDING_ENABLED !== "true") {
+    return res.status(403).json({ ok: false, error: "Email sending je vypnuté (EMAIL_SENDING_ENABLED=false)." });
+  }
   const { to = 'test@dev.local', subject = '4Cyber Phish – test', html = '<h3>MailHog test OK</h3>' } = req.body || {};
   try {
+
     const info = await sendMail({ to, subject, html });
     res.json({ ok: true, messageId: info.messageId });
   } catch (e) {
@@ -47,3 +68,20 @@ router.post('/send-test', async (req, res) => {
 });
 
 export default router;
+
+/*
+
+do serveru do .env doplnit:
+
+ENTRA_TENANT_ID=...
+ENTRA_CLIENT_ID=...
+ENTRA_CLIENT_SECRET=...
+
+# pro první ověření doporučuji nechat Graph default (funguje pro healthcheck)
+ENTRA_TOKEN_SCOPE=https://graph.microsoft.com/.default
+
+# volitelné: pokud chceš scope explicitně omezit
+# ENTRA_ALLOWED_SCOPES=https://graph.microsoft.com/.default
+
+
+*/

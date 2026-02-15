@@ -428,32 +428,31 @@ export default function SenderIdentitiesPage() {
                 Nastavit jako výchozí doménu
               </label>
 
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="submit"
                   disabled={loading}
                   className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-60"
                 >
-                  {identityForm.id ? "Uložit identitu" : "Přidat identitu"}
+                  {domainForm.id ? "Uložit doménu" : "Přidat doménu"}
                 </button>
 
-                {identityForm.id && (
+                {domainForm.id && (
                   <>
                     <button
                       type="button"
-                      onClick={applyIdentityToCampaign}
-                      disabled={applyingCampaign}
-                      className="rounded-md border border-[var(--brand-strong)] px-3 py-1.5 text-[11px] font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
+                      onClick={resetDomainForm}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] text-gray-700 hover:bg-gray-50"
                     >
-                      Do kampaně
+                      Zrušit úpravy
                     </button>
 
                     <button
                       type="button"
-                      onClick={resetIdentityForm}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] text-gray-700 hover:bg-gray-50"
+                      onClick={handleDeleteDomain}
+                      className="rounded-md border border-red-300 px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50"
                     >
-                      Zrušit úpravy
+                      Smazat
                     </button>
                   </>
                 )}

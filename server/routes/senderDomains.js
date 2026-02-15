@@ -6,6 +6,15 @@ const router = Router();
 
 const DEFAULT_TENANT_SLUG = "demo";
 
+function toClientSenderDomain(d) {
+  if (!d) return d;
+  // frontend používá klíč `description`, v DB je `label`
+  return {
+    ...d,
+    description: d.label ?? null,
+  };
+}
+
 async function getTenantId() {
   let tenant = await prisma.tenant.findUnique({
     where: { slug: DEFAULT_TENANT_SLUG },
@@ -54,7 +63,7 @@ router.get("/sender-domains", async (_req, res) => {
       where: { tenantId },
       orderBy: { createdAt: "asc" },
     });
-    res.json(list);
+    res.json(list.map(toClientSenderDomain));
   } catch (err) {
     console.error("GET /api/sender-domains error", err);
     res
@@ -86,7 +95,7 @@ router.post("/sender-domains", async (req, res) => {
       });
     });
 
-    res.status(201).json(created);
+    res.status(201).json(toClientSenderDomain(created));
   } catch (err) {
     console.error("POST /api/sender-domains error", err);
     res.status(400).json({
@@ -130,7 +139,7 @@ router.put("/sender-domains/:id", async (req, res) => {
       });
     });
 
-    res.json(updated);
+    res.json(toClientSenderDomain(updated));
   } catch (err) {
     console.error("PUT /api/sender-domains/:id error", err);
     res.status(400).json({

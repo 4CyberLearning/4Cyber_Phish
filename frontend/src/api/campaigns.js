@@ -4,6 +4,8 @@ const API_BASE =
     import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")) ||
   "";
 
+const SENDING_ENABLED = import.meta.env.VITE_EMAIL_SENDING_ENABLED === "true";
+
 async function request(path, options = {}) {
   const url = API_BASE ? `${API_BASE}${path}` : path;
 
@@ -21,7 +23,7 @@ async function request(path, options = {}) {
     console.error("Network error", e);
     throw new Error("Network error");
   }
-
+  if (res.status === 204) return null;
   const isJson =
     res.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await res.json() : await res.text();
@@ -52,6 +54,10 @@ export function createCampaign(payload) {
 }
 
 export function sendCampaignNow(id) {
+  if (!SENDING_ENABLED) {
+    return Promise.reject(new Error("Sending is disabled (VITE_EMAIL_SENDING_ENABLED != true)."));
+  }
+
   return request(`/api/campaigns/${id}/send-now`, {
     method: "POST",
     body: JSON.stringify({}),
@@ -63,4 +69,8 @@ export function updateCampaign(id, payload) {
     method: "PATCH",
     body: JSON.stringify(payload || {}),
   });
+}
+
+export function sendCampaignTest() {
+  return Promise.reject(new Error("sendCampaignTest is not implemented."));
 }

@@ -38,6 +38,10 @@ services:
       SMTP_PORT: "1025"
       SMTP_SECURE: "false"
       SMTP_FROM: "4Cyber Phish <no-reply@dev.local>"
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET}
+      ENTRA_TOKEN_SCOPE: ${ENTRA_TOKEN_SCOPE:-https://graph.microsoft.com/.default}
     volumes:
       - ./server:/app
       - node_modules_backend_dev:/app/node_modules

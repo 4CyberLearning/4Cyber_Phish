@@ -1,15 +1,16 @@
 // server/routes/tracking.js
 import { Router } from "express";
-import { PrismaClient, InteractionType } from "@prisma/client";
+import { InteractionType } from "@prisma/client";
 import prisma from "../db/prisma.js";
 
 const router = Router();
 
 // základ pro veřejný web (landing stránky)
 const WEB_BASE =
-  (process.env.PUBLIC_WEB_BASE_URL ||
-    process.env.PUBLIC_BASE_URL ||
-    "").replace(/\/$/, "");
+  (process.env.PUBLIC_WEB_BASE_URL || process.env.PUBLIC_BASE_URL || "").replace(
+    /\/$/,
+    ""
+  );
 
 // 1x1 transparentní GIF (base64)
 const PIXEL = Buffer.from(
@@ -17,21 +18,61 @@ const PIXEL = Buffer.from(
   "base64"
 );
 
-function sendPixel(res) {
-  res.setHeader("Content-Type", "image/gif");
+function noCache(res) {
   res.setHeader(
     "Cache-Control",
     "no-store, no-cache, must-revalidate, proxy-revalidate"
   );
-  res.setHeader("Content-Length", PIXEL.length);
-  res.end(PIXEL, "binary");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
 }
 
-  async function recordInteraction(cu, type, meta) {
-    const metaValue =
-      meta && typeof meta === "object" && Object.keys(meta).length > 0
-        ? meta
-        : undefined;
+function sendPixel(res) {
+  noCache(res);
+  res.status(200);
+  res.setHeader("Content-Type", "image/gif");
+  res.setHeader("Content-Length", PIXEL.length);
+  res.end(PIXEL);
+}
+
+function safeDecodeURIComponent(v) {
+  try {
+    return decodeURIComponent(String(v));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRedirectTarget(rawTarget) {
+  // povol: http/https absolutní nebo relativní "/..."
+  if (!rawTarget) return "/";
+
+  const t = String(rawTarget).trim();
+  if (!t) return "/";
+
+  // relativní
+  if (t.startsWith("/")) {
+    return WEB_BASE ? WEB_BASE + t : t;
+  }
+
+  // absolutní
+  try {
+    const u = new URL(t);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "/";
+    return u.toString();
+  } catch {
+    return "/";
+  }
+}
+
+async function recordInteraction(cu, type, meta) {
+  const metaValue =
+    meta && typeof meta === "object" && Object.keys(meta).length > 0
+      ? meta
+      : undefined;
+
   const now = new Date();
   const updates = {};
 
@@ -59,7 +100,7 @@ function sendPixel(res) {
         userId: cu.userId,
         campaignUserId: cu.id,
         type,
-        meta,
+        meta: metaValue,
       },
     }),
   ];
@@ -79,7 +120,9 @@ function sendPixel(res) {
 // ---- OPEN pixel: GET /t/o/:token.gif ----
 router.get("/o/:token.gif", async (req, res) => {
   try {
-    const token = req.params.token;
+    const token = String(req.params.token || "").trim();
+    if (!token) return sendPixel(res);
+
     const cu = await prisma.campaignUser.findUnique({
       where: { trackingToken: token },
     });
@@ -97,33 +140,27 @@ router.get("/o/:token.gif", async (req, res) => {
 
 // ---- CLICK: GET /t/c/:token?u=<encodedTarget> ----
 router.get("/c/:token", async (req, res) => {
-  const token = req.params.token;
-  let target = null;
-  try {
-    if (req.query.u) target = decodeURIComponent(String(req.query.u));
-  } catch {
-    target = null;
-  }
+  noCache(res);
+
+  const token = String(req.params.token || "").trim();
+  const decoded = req.query.u ? safeDecodeURIComponent(req.query.u) : null;
+
+  // default redirect (bezpečné)
+  const redirectTarget = normalizeRedirectTarget(decoded);
 
   try {
-    const cu = await prisma.campaignUser.findUnique({
-      where: { trackingToken: token },
-    });
+    if (token) {
+      const cu = await prisma.campaignUser.findUnique({
+        where: { trackingToken: token },
+      });
 
-    if (cu) {
-      await recordInteraction(cu, InteractionType.CLICKED);
+      if (cu) {
+        await recordInteraction(cu, InteractionType.CLICKED);
+      }
     }
   } catch (e) {
     console.error("CLICK tracking error", e);
   } finally {
-    // kam přesměrovat
-    let redirectTarget = target || "/";
-
-    // pokud je target relativní ("/něco"), předejdi ho na WEB_BASE
-    if (redirectTarget.startsWith("/") && WEB_BASE) {
-      redirectTarget = WEB_BASE + redirectTarget;
-    }
-
     res.redirect(302, redirectTarget);
   }
 });
@@ -133,6 +170,7 @@ router.get("/c/:token", async (req, res) => {
 router.post("/s/:token", async (req, res) => {
   try {
     const token = String(req.params.token || "").trim();
+    if (!token) return res.status(404).json({ ok: false });
 
     const cu = await prisma.campaignUser.findUnique({
       where: { trackingToken: token },
@@ -140,7 +178,9 @@ router.post("/s/:token", async (req, res) => {
     if (!cu) return res.status(404).json({ ok: false });
 
     const pageSlug =
-      typeof req.body?.pageSlug === "string" ? req.body.pageSlug.slice(0, 200) : null;
+      typeof req.body?.pageSlug === "string"
+        ? req.body.pageSlug.slice(0, 200)
+        : null;
 
     await recordInteraction(cu, InteractionType.SUBMITTED, {
       pageSlug,

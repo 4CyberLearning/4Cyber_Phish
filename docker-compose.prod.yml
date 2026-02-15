@@ -50,9 +50,18 @@ services:
       ADMIN3_NAME: ${ADMIN3_NAME}
       ADMIN4_EMAIL: ${ADMIN4_EMAIL}
       ADMIN4_PASSWORD: ${ADMIN4_PASSWORD}
-      ADMIN4_NAME: ${ADMIN4_NAME}      
+      ADMIN4_NAME: ${ADMIN4_NAME}    
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID}
+      ENTRA_TOKEN_SCOPE: ${ENTRA_TOKEN_SCOPE:-https://graph.microsoft.com/.default}
+      ENTRA_CLIENT_CERT_KEY_PATH: /run/secrets/entra-app.key
+      ENTRA_CLIENT_CERT_DER_PATH: /run/secrets/entra-app.cer
+      ENTRA_CLIENT_AUTH: "cert"
+      
     volumes:
       - backend_uploads:/app/uploads
+      - /opt/4cyber/secrets/entra-app.key:/run/secrets/entra-app.key:ro
+      - /opt/4cyber/secrets/entra-app.cer:/run/secrets/entra-app.cer:ro      
     ports:
       - "127.0.0.1:5000:5000"
 
