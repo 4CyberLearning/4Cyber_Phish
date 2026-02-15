@@ -41,7 +41,7 @@ services:
       ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
       ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID}
       ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET}
-      ENTRA_TOKEN_SCOPE: ${ENTRA_TOKEN_SCOPE:-https://graph.microsoft.com/.default}
+      ENTRA_TOKEN_SCOPE: ${ENTRA_TOKEN_SCOPE:-https://outlook.office365.com/.default}
     volumes:
       - ./server:/app
       - node_modules_backend_dev:/app/node_modules

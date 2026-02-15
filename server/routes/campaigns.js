@@ -341,6 +341,10 @@ async function sendCampaignEmails(campaignId, tenantId) {
     }
   }
 
+  if (!smtpUser) {
+    throw new Error("Sender identity is required (smtpUser is missing).");
+  }  
+
   for (const cu of campaign.targetUsers) {
     const userName = cu.user.fullName || cu.user.email;
     const landingUrl = buildLandingUrl(campaign, cu);
