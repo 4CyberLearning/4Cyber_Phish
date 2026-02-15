@@ -1,4 +1,4 @@
-// server/mailer.js
+// server/utils/mailer.js
 import nodemailer from "nodemailer";
 import { getSmtpAuthConfig } from "./smtpAuthProvider.js";
 
@@ -8,23 +8,20 @@ const {
   EMAIL_SENDING_ENABLED = "false",
   REQUIRE_ALLOWLIST_IN_PROD = "true",
 
-  // allowlist příjemců (fallback env; primárně už používáš DB allowlist)
-  ALLOWED_RECIPIENTS = "",
-  ALLOWED_RECIPIENT_DOMAINS = "",
-
-  // allowlist odesílatelů (základní pojistka – ideálně používej i sender identities v DB)
-  ALLOWED_FROM_DOMAINS = "",
-
-  // pokud true, vynutí: from-email musí být shodný se smtpUser
-  STRICT_FROM_MATCH_SMTP_USER = "true",
+  SMTP_HOST = "smtp.office365.com",
+  SMTP_PORT = "587",
+  SMTP_SECURE = "false",
+  SMTP_FROM = "App <no-reply@dev.local>",
 
   MAX_EMAILS_PER_MINUTE = "0",
   MAX_EMAILS_PER_DAY = "0",
 
-  SMTP_HOST = "localhost",
-  SMTP_PORT = "1025",
-  SMTP_SECURE = "false",
-  SMTP_FROM = "App <no-reply@dev.local>",
+  // fallback allowlist z ENV (když policy nepředáš)
+  ALLOWED_RECIPIENTS = "",
+  ALLOWED_RECIPIENT_DOMAINS = "",
+  ALLOWED_FROM_DOMAINS = "",
+
+  SMTP_DEBUG = "false",
 } = process.env;
 
 const isProd = NODE_ENV === "production";
@@ -32,31 +29,33 @@ const emailSendingEnabled = EMAIL_SENDING_ENABLED === "true";
 
 const port = Number(SMTP_PORT);
 const secure = SMTP_SECURE === "true";
+const smtpDebug = SMTP_DEBUG === "true";
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port,
-  secure, // 465=true, 587=false
-  requireTLS: !secure && (port === 587 || port === 25),
-  tls: { minVersion: "TLSv1.2" },
-});
-
-// refresh auth per message (kvůli dynamickému smtpUser / token refresh)
-async function refreshAuth(smtpUser) {
-  transporter.options.auth = await getSmtpAuthConfig({ smtpUser });
+function toSet(value) {
+  if (!value) return new Set();
+  return new Set(
+    String(value)
+      .split(/[,\s;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
 }
 
-const allowedRecipients = new Set(
-  ALLOWED_RECIPIENTS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
+const envAllowedRecipients = toSet(ALLOWED_RECIPIENTS);
+const envAllowedDomains = toSet(ALLOWED_RECIPIENT_DOMAINS);
+const envAllowedFromDomains = toSet(ALLOWED_FROM_DOMAINS);
 
-const allowedDomains = new Set(
-  ALLOWED_RECIPIENT_DOMAINS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
-
-const allowedFromDomains = new Set(
-  ALLOWED_FROM_DOMAINS.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
-);
+if (
+  isProd &&
+  emailSendingEnabled &&
+  REQUIRE_ALLOWLIST_IN_PROD === "true" &&
+  !envAllowedRecipients.size &&
+  !envAllowedDomains.size
+) {
+  throw new Error(
+    "EMAIL_SENDING_ENABLED=true v produkci vyžaduje ALLOWED_RECIPIENTS nebo ALLOWED_RECIPIENT_DOMAINS (nebo předávej policy z DB)."
+  );
+}
 
 function normalizeToList(to) {
   if (Array.isArray(to)) return to;
@@ -79,7 +78,10 @@ function domainOfEmail(addr) {
   return email.slice(at + 1);
 }
 
-function isAllowedRecipient(addr) {
+function isAllowedRecipient(addr, policy) {
+  const allowedRecipients = policy?.allowedRecipients || envAllowedRecipients;
+  const allowedDomains = policy?.allowedRecipientDomains || envAllowedDomains;
+
   if (!allowedRecipients.size && !allowedDomains.size) return true;
 
   const email = String(addr).trim().toLowerCase();
@@ -89,25 +91,14 @@ function isAllowedRecipient(addr) {
   return !!(domain && allowedDomains.has(domain));
 }
 
-function enforceFromDomain(fromValue) {
+function enforceFromDomain(fromValue, policy) {
+  const allowedFromDomains = policy?.allowedFromDomains || envAllowedFromDomains;
   if (!allowedFromDomains.size) return;
 
   const fromEmail = extractEmail(fromValue);
   const domain = domainOfEmail(fromEmail);
   if (!domain || !allowedFromDomains.has(domain)) {
     throw new Error(`From doména není povolena: ${fromEmail}`);
-  }
-}
-
-function enforceFromMatchesSmtpUser(fromValue, smtpUser) {
-  if (STRICT_FROM_MATCH_SMTP_USER !== "true") return;
-  const fromEmail = extractEmail(fromValue).toLowerCase();
-  const smtp = String(smtpUser || "").trim().toLowerCase();
-  if (!smtp) throw new Error("smtpUser is required");
-  if (fromEmail !== smtp) {
-    throw new Error(
-      `From (${fromEmail}) musí být shodné se smtpUser (${smtp}). Pro SendAs/alias řeš přes EXO a vypni STRICT_FROM_MATCH_SMTP_USER.`
-    );
   }
 }
 
@@ -143,27 +134,41 @@ function enforceRateLimits() {
   }
 }
 
-export async function sendMail({ to, subject, html, from, replyTo, smtpUser }) {
+function createTransport(auth) {
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port,
+    secure,
+    requireTLS: !secure && (port === 587 || port === 25),
+    auth,
+    tls: { minVersion: "TLSv1.2" },
+    ...(smtpDebug ? { logger: true, debug: true } : {}),
+  });
+}
+
+export async function sendMail({ smtpUser, to, subject, html, from, replyTo, policy } = {}) {
   if (!emailSendingEnabled) {
     throw new Error("Email sending je vypnuté (EMAIL_SENDING_ENABLED=false).");
   }
 
-  // (fallback env allowlist; DB allowlist si vynucuješ jinde)
   const recipients = normalizeToList(to);
-  const blocked = recipients.filter((r) => !isAllowedRecipient(r));
+  const blocked = recipients.filter((r) => !isAllowedRecipient(r, policy));
   if (blocked.length) {
     throw new Error(`Recipient not allowlisted: ${blocked.join(", ")}`);
   }
 
   const finalFrom = from || SMTP_FROM;
-
-  enforceFromDomain(finalFrom);
+  enforceFromDomain(finalFrom, policy);
   enforceRateLimits();
 
-  const effectiveSmtpUser = smtpUser || process.env.SMTP_USER;
-  enforceFromMatchesSmtpUser(finalFrom, effectiveSmtpUser);
+  const auth = await getSmtpAuthConfig({ smtpUser });
 
-  await refreshAuth(effectiveSmtpUser);
+  // bezpečný log pro ověření, že auth fakt existuje (neprintuj token)
+  if (smtpDebug) {
+    console.log("[SMTP] auth:", { type: auth?.type, user: auth?.user, hasToken: !!auth?.accessToken });
+  }
+
+  const transporter = createTransport(auth);
 
   const info = await transporter.sendMail({
     from: finalFrom,
@@ -180,6 +185,7 @@ export async function sendMail({ to, subject, html, from, replyTo, smtpUser }) {
 }
 
 export async function verifySmtp({ smtpUser } = {}) {
-  await refreshAuth(smtpUser || process.env.SMTP_USER);
+  const auth = await getSmtpAuthConfig({ smtpUser });
+  const transporter = createTransport(auth);
   return transporter.verify();
 }
