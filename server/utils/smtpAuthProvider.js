@@ -1,5 +1,5 @@
 // server/smtpAuthProvider.js
-import { getAccessToken } from "./utils/entraOauthClient.js";
+import { getAccessToken } from "./entraOauthClient.js";
 
 function clean(v) {
   return v == null ? "" : String(v).trim().replace(/^['"]|['"]$/g, "");
@@ -22,11 +22,7 @@ function optional(name, def = "") {
  * - Fallback basic auth (if you still use it): { user, pass }
  */
 export async function getSmtpAuthConfig({ smtpUser } = {}) {
-  const user =
-    clean(smtpUser) ||
-    clean(process.env.SMTP_USER) ||
-    "";
-
+  const user = clean(smtpUser) || "";
   if (!user) {
     throw new Error(
       "SMTP_USER is required (or pass smtpUser to sendMail) to know which mailbox to send as."
