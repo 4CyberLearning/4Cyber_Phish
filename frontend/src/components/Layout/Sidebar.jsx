@@ -40,8 +40,8 @@ const NAV_VISIBILITY = {
   "nav.automation.rules": false,
   "nav.automation.tasks": false,
 
-  "nav.settings.title": false,
-  "nav.settings.general": false,
+  "nav.settings.title": true,
+  "nav.settings.general": true,
   "nav.settings.mail": false,
   "nav.settings.api": false,
   "nav.settings.users": false,
