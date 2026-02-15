@@ -1,24 +1,60 @@
-// server/utils/smtpAuthProvider.js
-import { getAccessToken } from "./entraOauthClient.js";
+// server/smtpAuthProvider.js
+import { getAccessToken } from "./utils/entraOauthClient.js";
 
-export async function getSmtpAuthConfig() {
-  const mode = (process.env.SMTP_AUTH_MODE || "basic").toLowerCase();
+function clean(v) {
+  return v == null ? "" : String(v).trim().replace(/^['"]|['"]$/g, "");
+}
 
-  if (mode === "basic") {
-    const { SMTP_USER, SMTP_PASS } = process.env;
-    return SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined;
+function required(name) {
+  const v = clean(process.env[name]);
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+function optional(name, def = "") {
+  const v = clean(process.env[name]);
+  return v || def;
+}
+
+/**
+ * Returns nodemailer auth config.
+ * - OAuth app-only (preferred): { type: "OAuth2", user, accessToken }
+ * - Fallback basic auth (if you still use it): { user, pass }
+ */
+export async function getSmtpAuthConfig({ smtpUser } = {}) {
+  const user =
+    clean(smtpUser) ||
+    clean(process.env.SMTP_USER) ||
+    "";
+
+  if (!user) {
+    throw new Error(
+      "SMTP_USER is required (or pass smtpUser to sendMail) to know which mailbox to send as."
+    );
   }
 
-  if (mode === "oauth") {
-    const user = (process.env.SMTP_USER || "").trim();
-    if (!user) throw new Error("Missing env: SMTP_USER (mailbox UPN/email)");
+  const tenantId = clean(process.env.ENTRA_TENANT_ID);
+  const clientId = clean(process.env.ENTRA_CLIENT_ID);
 
-    // pro SMTP app-only token
-    const scope = (process.env.SMTP_OAUTH_SCOPE || "https://outlook.office365.com/.default").trim();
+  // OAuth path (app-only)
+  if (tenantId && clientId) {
+    // SMTP OAuth needs outlook resource (.default)
+    const scope = optional("ENTRA_TOKEN_SCOPE", "https://outlook.office365.com/.default");
     const accessToken = await getAccessToken({ scope });
-
-    return { type: "OAuth2", user, accessToken };
+    return {
+      type: "OAuth2",
+      user,
+      accessToken,
+    };
   }
 
-  throw new Error(`Unknown SMTP_AUTH_MODE: ${mode}`);
+  // Fallback basic (not recommended for EXO long-term)
+  const pass = clean(process.env.SMTP_PASS);
+  if (!pass) {
+    throw new Error(
+      "No Entra OAuth config found (ENTRA_TENANT_ID/ENTRA_CLIENT_ID) and SMTP_PASS is missing."
+    );
+  }
+
+  return { user, pass };
 }

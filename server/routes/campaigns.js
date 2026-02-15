@@ -323,15 +323,17 @@ async function sendCampaignEmails(campaignId, tenantId) {
 
   let from;
   let replyTo;
+  let smtpUser;
 
   if (campaign.senderIdentity) {
     const local = campaign.senderIdentity.localPart;
     const domain = campaign.senderIdentity.senderDomain?.domain;
-    const email =
-      local && domain ? `${local}@${domain}` : undefined;
+    const email = local && domain ? `${local}@${domain}` : undefined;
 
     if (email) {
-      from = `${campaign.senderIdentity.fromName} <${email}>`;
+      smtpUser = String(email).trim().toLowerCase();
+      const fromName = campaign.senderIdentity.fromName || smtpUser;
+      from = `${fromName} <${smtpUser}>`;
     }
 
     if (campaign.senderIdentity.replyTo) {
@@ -355,6 +357,7 @@ async function sendCampaignEmails(campaignId, tenantId) {
 
     // 3) odeslat e-mail
     const info = await sendMail({
+      smtpUser, // <- klíčové pro výběr 1 ze 4 mailboxů
       from,
       replyTo,
       to: cu.user.email,
@@ -362,7 +365,7 @@ async function sendCampaignEmails(campaignId, tenantId) {
       html: htmlTracked,
       policy: sendPolicy,
     });
-
+    
     // 4) zapsat EMAIL_SENT + agregace
     await prisma.$transaction([
       prisma.interaction.create({
