@@ -64,6 +64,12 @@ export function sendCampaignNow(id) {
   });
 }
 
+export function deleteCampaign(id) {
+  return request(`/api/campaigns/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export function updateCampaign(id, payload) {
   return request(`/api/campaigns/${id}`, {
     method: "PATCH",
@@ -73,4 +79,12 @@ export function updateCampaign(id, payload) {
 
 export function sendCampaignTest() {
   return Promise.reject(new Error("sendCampaignTest is not implemented."));
+}
+
+export function setCampaignTargetsGroup(campaignId, groupId) {
+  return request(`/api/campaigns/${campaignId}/targets/group`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groupId }),
+  });
 }

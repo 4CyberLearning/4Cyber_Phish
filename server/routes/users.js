@@ -318,4 +318,137 @@ router.delete("/groups/:id", async (req, res) => {
   }
 });
 
+// GET /api/groups/:id/users?take=50&skip=0&q=...
+router.get("/groups/:id/users", async (req, res) => {
+  const groupId = Number(req.params.id);
+  const take = Math.min(Number(req.query.take ?? 50) || 50, 200);
+  const skip = Number(req.query.skip ?? 0) || 0;
+  const q = String(req.query.q ?? "").trim().toLowerCase();
+
+  if (!Number.isInteger(groupId)) return res.status(400).json({ error: "Invalid groupId" });
+
+  try {
+    const tenantId = await getTenantId();
+
+    const group = await prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    const whereUser = q
+      ? {
+          OR: [
+            { email: { contains: q, mode: "insensitive" } },
+            { firstName: { contains: q, mode: "insensitive" } },
+            { lastName: { contains: q, mode: "insensitive" } },
+            { fullName: { contains: q, mode: "insensitive" } },
+          ],
+        }
+      : {};
+
+    const [total, items] = await Promise.all([
+      prisma.groupMember.count({ where: { groupId, user: whereUser } }),
+      prisma.groupMember.findMany({
+        where: { groupId, user: whereUser },
+        orderBy: { joinedAt: "desc" },
+        skip,
+        take,
+        select: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              fullName: true,
+              department: true,
+              role: true,
+              custom: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return res.json({ total, items: items.map((x) => x.user) });
+  } catch (e) {
+    console.error("GET /groups/:id/users failed", e);
+    return res.status(500).json({ error: e.message || "Failed" });
+  }
+});
+
+// POST /api/users/import  { groupId, users:[{email,firstName,lastName,custom:{custom1..custom20}}] }
+router.post("/users/import", async (req, res) => {
+  const groupId = Number(req.body?.groupId);
+  const users = req.body?.users;
+
+  if (!Number.isInteger(groupId)) return res.status(400).json({ error: "groupId is required" });
+  if (!Array.isArray(users)) return res.status(400).json({ error: "users must be an array" });
+
+  try {
+    const tenantId = await getTenantId();
+
+    const group = await prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    let imported = 0;
+    let skipped = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of users) {
+        const email = String(row?.email || "").trim().toLowerCase();
+        if (!email) {
+          skipped++;
+          continue;
+        }
+
+        const firstName = String(row?.firstName || "").trim() || null;
+        const lastName = String(row?.lastName || "").trim() || null;
+
+        const fullName =
+          (String(firstName || "") + " " + String(lastName || "")).trim() || null;
+
+        // custom: jen custom1..custom20
+        const rawCustom = row?.custom && typeof row.custom === "object" ? row.custom : {};
+        const custom = {};
+        for (let i = 1; i <= 20; i++) {
+          const k = `custom${i}`;
+          const v = rawCustom?.[k];
+          if (v !== undefined && v !== null && String(v).trim() !== "") custom[k] = String(v);
+        }
+
+        const user = await tx.user.upsert({
+          where: { email },
+          create: {
+            tenantId,
+            email,
+            firstName,
+            lastName,
+            fullName,
+            custom: Object.keys(custom).length ? custom : null,
+          },
+          update: {
+            firstName,
+            lastName,
+            fullName,
+            custom: Object.keys(custom).length ? custom : null,
+          },
+          select: { id: true },
+        });
+
+        await tx.groupMember.upsert({
+          where: { userId_groupId: { userId: user.id, groupId } },
+          create: { userId: user.id, groupId },
+          update: {},
+        });
+
+        imported++;
+      }
+    });
+
+    return res.json({ ok: true, imported, skipped });
+  } catch (e) {
+    console.error("POST /users/import failed", e);
+    return res.status(500).json({ error: e.message || "Failed" });
+  }
+});
+
 export default router;

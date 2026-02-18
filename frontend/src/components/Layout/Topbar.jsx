@@ -7,9 +7,9 @@ import { useRouteTransition } from "../../transition/RouteTransition";
 // 2) Landing page
 // 3) Odesílatel
 // 4) Příjemci (před kontrolou)
-// 5) Příprava
-// 6) Kontrola
-// 7) Spuštění
+// 5) Časová okna
+// 6) Příprava
+// 7) Rekapitulace + spuštění
 const STEPS = [
   { key: "email", label: "Email", to: () => "/content/email-templates" },
   { key: "landing", label: "Landing page", to: () => "/content/landing-pages" },
@@ -25,17 +25,38 @@ const STEPS = [
     title: "Příjemci (před kontrolou)",
     to: () => "/users",
   },
+  {
+    // POZOR: klíč necháváme "launch" kvůli kompatibilitě (progress v localStorage)
+    key: "launch",
+    label: (
+      <>
+        <span>Časová</span>
+        <span className="block">okna</span>
+      </>
+    ),
+    title: "Časová okna (odesílání)",
+    to: (id) => (id ? `/campaigns/${id}/schedule` : "/campaigns"),
+  },
   { key: "preflight", label: "Příprava", to: (id) => (id ? `/campaigns/${id}/preflight` : "/campaigns") },
-  { key: "review", label: "Kontrola", to: (id) => (id ? `/campaigns/${id}` : "/campaigns") },
-  { key: "launch", label: "Spuštění", to: (id) => (id ? `/campaigns/${id}/launch` : "/campaigns") },
+  {
+    key: "review",
+    label: (
+      <>
+        <span>Rekap.</span>
+        <span className="block">+ spuštění</span>
+      </>
+    ),
+    title: "Rekapitulace + spuštění",
+    to: (id) => (id ? `/campaigns/${id}` : "/campaigns"),
+  },
 ];
 
 const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
 const LOCK_KEY = "campaign.locked.v1";
-const PROGRESS_KEY = "campaign.progress.v3";
-
+const PROGRESS_KEY_V4 = "campaign.progress.v4";
+const PROGRESS_KEY_V3 = "campaign.progress.v3";
 const PREFLIGHT_KEY = "campaign.preflight.v1";
-
+const SCHEDULE_KEY = "campaign.schedule.v1";
 const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
 const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
 const CAMPAIGN_CHANGED_EVENT = "campaign:changed";
@@ -61,7 +82,7 @@ function writeJson(key, value) {
 
 function ensureBucket(progressById, id) {
   if (progressById[id]) return progressById;
-  return { ...progressById, [id]: { currentStep: "email", completed: {} } };
+  return { ...progressById, [id]: { currentStep: "email", completed: {}, overrides: {} } };
 }
 
 function recipientsCount(c) {
@@ -76,6 +97,12 @@ function recipientsCount(c) {
 function readPreflightDone(campaignId) {
   if (!campaignId) return false;
   const all = readJson(PREFLIGHT_KEY, {});
+  return !!all[String(campaignId)]?.done;
+}
+
+function readScheduleDone(campaignId) {
+  if (!campaignId) return false;
+  const all = readJson(SCHEDULE_KEY, {});
   return !!all[String(campaignId)]?.done;
 }
 
@@ -275,14 +302,19 @@ export default function Topbar({ onOpenSidebar }) {
 
   const [campaign, setCampaign] = useState(null);
 
-  const [progressById, setProgressById] = useState(() => readJson(PROGRESS_KEY, {}));
+  const [progressById, setProgressById] = useState(() => {
+    const v4 = readJson(PROGRESS_KEY_V4, null);
+    if (v4 && typeof v4 === "object") return v4;
+    const v3 = readJson(PROGRESS_KEY_V3, {});
+    return v3 && typeof v3 === "object" ? v3 : {};
+  });
 
   const hasCampaign = !!selectedCampaignId && selectedCampaignId !== NONE_ID;
   const effectiveId = hasCampaign ? String(selectedCampaignId) : FALLBACK_ID;
 
-  const progress = progressById[effectiveId] || { currentStep: "email", completed: {} };
+  const progress = progressById[effectiveId] || { currentStep: "email", completed: {}, overrides: {} };
+  const overrides = progress.overrides || progress.completed || {};
   const currentStep = STEPS.some((s) => s.key === progress.currentStep) ? progress.currentStep : "email";
-  const manualCompleted = progress.completed || {};
 
   const autoCompleted = useMemo(() => {
     if (!hasCampaign) return {};
@@ -291,17 +323,19 @@ export default function Topbar({ onOpenSidebar }) {
       landing: !!(campaign?.landingPage || campaign?.landingPageId),
       sender: !!(campaign?.senderIdentity || campaign?.senderIdentityId),
       targets: recipientsCount(campaign) > 0,
+      // "launch" klíč používáme jako krok "Časová okna" (kompatibilita)
+      launch: readScheduleDone(selectedCampaignId),
       preflight: readPreflightDone(selectedCampaignId),
-      launch: ["ACTIVE", "FINISHED", "COMPLETED", "CANCELED"].includes(String(campaign?.status || "").toUpperCase()),
+      review: ["ACTIVE", "FINISHED", "COMPLETED", "CANCELED"].includes(String(campaign?.status || "").toUpperCase()),
     };
   }, [hasCampaign, campaign, selectedCampaignId]);
 
   const completed = useMemo(() => {
     return {
-      ...manualCompleted,
       ...autoCompleted,
+      ...overrides,
     };
-  }, [manualCompleted, autoCompleted]);
+  }, [autoCompleted, overrides]);
 
   const selectCampaign = useCallback((id) => {
     const raw = String(id ?? "");
@@ -348,13 +382,13 @@ export default function Topbar({ onOpenSidebar }) {
   useEffect(() => {
     setProgressById((prev) => {
       const next = ensureBucket(prev, effectiveId);
-      if (next !== prev) writeJson(PROGRESS_KEY, next);
+      if (next !== prev) writeJson(PROGRESS_KEY_V4, next);
       return next;
     });
   }, [effectiveId]);
 
   useEffect(() => {
-    writeJson(PROGRESS_KEY, progressById);
+    writeJson(PROGRESS_KEY_V4, progressById);
   }, [progressById]);
 
   useEffect(() => {
@@ -384,15 +418,53 @@ export default function Topbar({ onOpenSidebar }) {
     const onSelected = (e) => {
       const id = String(e?.detail?.id ?? "");
       if (!id) return;
-      if (locked) return;
+
+      const force = !!e?.detail?.force;
+      const refreshList = !!e?.detail?.refreshList;
+
+      // při force přepneme i když je lock
+      if (locked && !force) return;
+
+      if (force) {
+        localStorage.setItem(LOCK_KEY, "0");
+        setLocked(false);
+      }
+
       selectCampaign(id);
+
+      // po vytvoření nové kampaně refreshni list, aby se zobrazil správný label v dropdownu
+      if (force || refreshList) {
+        (async () => {
+          setLoadingCampaigns(true);
+          try {
+            const data = await listCampaigns();
+            setCampaigns(Array.isArray(data) ? data : []);
+          } finally {
+            setLoadingCampaigns(false);
+          }
+        })();
+      }
     };
 
     const onUpdated = (e) => {
+      const refreshList = !!e?.detail?.refreshList;
+
+      if (refreshList) {
+        (async () => {
+          setLoadingCampaigns(true);
+          try {
+            const data = await listCampaigns();
+            setCampaigns(Array.isArray(data) ? data : []);
+          } finally {
+            setLoadingCampaigns(false);
+          }
+        })();
+      }
+
       const id = String(e?.detail?.id ?? "");
       if (!id) return;
       if (String(id) !== String(selectedCampaignId)) return;
-
+      
       const step = String(e?.detail?.step ?? "");
       if (step === "preflight") {
         setCampaign((c) => c);
@@ -433,39 +505,55 @@ export default function Topbar({ onOpenSidebar }) {
     });
   };
 
-  const toggleCompleted = (stepKey) => {
-    setProgressById((prev) => {
-      const next = ensureBucket(prev, effectiveId);
-      const cur = next[effectiveId];
-      const done = !!cur.completed?.[stepKey];
-      return {
-        ...next,
-        [effectiveId]: { ...cur, completed: { ...cur.completed, [stepKey]: !done } },
-      };
-    });
-  };
-
   const goToStep = (stepKey) => {
     const def = STEPS.find((s) => s.key === stepKey);
     if (!def) return;
     start(def.to(hasCampaign ? selectedCampaignId : ""));
   };
 
-  const MANUAL_TOGGLE_KEYS = new Set(["review", "launch"]);
+  const toggleCompleted = (stepKey) => {
+    setProgressById((prev) => {
+      const next = ensureBucket(prev, effectiveId);
+      const cur = next[effectiveId];
 
-  const handleStepClick = (stepKey) => {
+      const prevOverrides = cur.overrides || cur.completed || {};
+      const autoDone = !!autoCompleted?.[stepKey];
+
+      // Toggle:
+      // - bez override: nastav invert auto
+      // - s override: smaž override (návrat na auto)
+      const hasOverride = Object.prototype.hasOwnProperty.call(prevOverrides, stepKey);
+      const nextOverrides = { ...prevOverrides };
+
+      if (!hasOverride) nextOverrides[stepKey] = !autoDone;
+      else delete nextOverrides[stepKey];
+
+      return {
+        ...next,
+        [effectiveId]: {
+          ...cur,
+          overrides: nextOverrides,
+          completed: cur.completed || {}, // kompatibilita
+        },
+      };
+    });
+  };
+
+  const handleStepClick = (stepKey, e) => {
+    // Shift+klik = jen (od)škrtnout bez navigace
+    if (e?.shiftKey) {
+      toggleCompleted(stepKey);
+      return;
+    }
+
     if (stepKey !== currentStep) {
       setCurrentStep(stepKey);
       goToStep(stepKey);
       return;
     }
 
-    if (MANUAL_TOGGLE_KEYS.has(stepKey)) {
-      toggleCompleted(stepKey);
-      return;
-    }
-
-    goToStep(stepKey);
+    // klik na aktuální krok = (od)škrtnout
+    toggleCompleted(stepKey);
   };
 
   return (
@@ -560,8 +648,9 @@ export default function Topbar({ onOpenSidebar }) {
                     const active = s.key === currentStep;
                     const done = !!completed[s.key];
 
+                    const wide = s.key === "targets" || s.key === "launch" || s.key === "review";
                     const base =
-                      `group relative flex ${s.key === "targets" ? "w-[92px]" : "w-[74px]"} shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-0.5 text-center transition`;
+                      `group relative flex ${wide ? "w-[92px]" : "w-[74px]"} shrink-0 flex-col items-center justify-center rounded-2xl border px-2 py-0.5 text-center transition`;
                     const state = active
                       ? "bg-white/22 dark:bg-white/5 border-white/35 dark:border-white/10 " +
                         "shadow-[inset_0_0_0_1px_rgba(46,36,211,0.35),inset_0_0_14px_rgba(71,101,238,0.18)]"
@@ -581,13 +670,23 @@ export default function Topbar({ onOpenSidebar }) {
                       active ? "text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-200";
 
                     return (
-                      <button
-                        key={s.key}
-                        type="button"
-                        onClick={() => handleStepClick(s.key)}
-                        className={[base, state].join(" ")}
-                        title={s.title || (typeof s.label === "string" ? s.label : "")}
-                      >
+                        <button
+                          key={s.key}
+                          type="button"
+                          onClick={(e) => handleStepClick(s.key, e)}
+                          className={[base, state].join(" ")}
+                          title={
+                            (s.title || (typeof s.label === "string" ? s.label : "")) +
+                            (Object.prototype.hasOwnProperty.call(overrides || {}, s.key) ? " (override)" : "") +
+                            " · Shift+klik = (od)škrtnout"
+                          }
+                        >
+                        {Object.prototype.hasOwnProperty.call(overrides || {}, s.key) && (
+                          <span
+                            className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--brand-strong)]/70 ring-2 ring-white/70 dark:ring-white/10"
+                            aria-hidden="true"
+                          />
+                        )}                          
                         <div className={["flex h-6 w-6 items-center justify-center rounded-xl", badge].join(" ")}>
                           <span
                             className={[

@@ -43,16 +43,16 @@ model Tenant {
   slug      String   @unique
   createdAt DateTime @default(now())
 
-  users            User[]
-  groups           Group[]
-  campaigns        Campaign[]
-  templates        EmailTemplate[]
-  landingPages     LandingPage[]
-  trainings        TrainingModule[]
-  auditLogs        AuditLog[]
-  assets           Asset[]
-  senderIdentities SenderIdentity[]
-  senderDomains    SenderDomain[]
+  users                   User[]
+  groups                  Group[]
+  campaigns               Campaign[]
+  templates               EmailTemplate[]
+  landingPages            LandingPage[]
+  trainings               TrainingModule[]
+  auditLogs               AuditLog[]
+  assets                  Asset[]
+  senderIdentities        SenderIdentity[]
+  senderDomains           SenderDomain[]
   allowedRecipientDomains AllowedRecipientDomain[]
 }
 
@@ -95,9 +95,12 @@ model User {
 
   email        String   @unique
   passwordHash String?
+  firstName    String?
+  lastName     String?
   fullName     String?
   department   String?
   role         String?
+  custom       Json?
   isAdmin      Boolean  @default(false)
   riskScore    Float    @default(0.0)
   createdAt    DateTime @default(now())
@@ -116,7 +119,8 @@ model Group {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name     String
 
-  members GroupMember[]
+  members    GroupMember[]
+  targetedBy Campaign[]    @relation("CampaignTargetGroup")
 
   @@unique([tenantId, name])
 }
@@ -171,7 +175,7 @@ model SenderIdentity {
   senderDomainId Int
   senderDomain   SenderDomain @relation(fields: [senderDomainId], references: [id], onDelete: Cascade)
 
-  campaigns Campaign[]
+  campaigns Campaign[] @relation("CampaignSenderIdentity")
 
   @@unique([tenantId, name])
   @@unique([tenantId, senderDomainId, localPart])
@@ -206,18 +210,20 @@ model Campaign {
   scheduledAt DateTime
   status      CampaignStatus @default(SCHEDULED)
 
-  emailTemplateId Int
-  emailTemplate   EmailTemplate @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)
+  emailTemplateId Int?
+  emailTemplate   EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)
 
-  landingPageId Int
-  landingPage   LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
+  landingPageId Int?
+  landingPage   LandingPage? @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
 
   senderIdentityId Int?
-  senderIdentity   SenderIdentity? @relation(fields: [senderIdentityId], references: [id], onDelete: SetNull)
+  senderIdentity   SenderIdentity? @relation("CampaignSenderIdentity", fields: [senderIdentityId], references: [id], onDelete: Restrict)
 
-  targetUsers  CampaignUser[]
-  interactions Interaction[]
-  createdAt    DateTime       @default(now())
+  targetGroupId Int?
+  targetGroup   Group?         @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  targetUsers   CampaignUser[]
+  interactions  Interaction[]
+  createdAt     DateTime       @default(now())
 }
 
 model CampaignUser {

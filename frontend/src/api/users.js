@@ -88,3 +88,19 @@ export function deleteGroup(id) {
     method: "DELETE",
   });
 }
+
+export function listGroupUsers(groupId, { take = 50, skip = 0, q = "" } = {}) {
+  const params = new URLSearchParams();
+  params.set("take", String(take));
+  params.set("skip", String(skip));
+  if (q) params.set("q", q);
+  return request(`/api/groups/${groupId}/users?${params.toString()}`);
+}
+
+export function importUsersToGroup(groupId, users) {
+  return request(`/api/users/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groupId, users }),
+  });
+}

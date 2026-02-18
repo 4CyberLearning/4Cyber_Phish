@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -19,6 +19,33 @@ const EMPTY_PAGE = {
   html: "",
   tags: [],
 };
+
+function escapeHtmlTitle(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function ensureHtmlDoc(html, title) {
+  const raw = String(html || "");
+  if (/<html[\s>]/i.test(raw)) return raw;
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtmlTitle(
+    title || "Náhled"
+  )}</title></head><body>${raw}</body></html>`;
+}
+
+function openHtmlInNewTab(html, title, onPopupBlocked) {
+  const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+  if (!w) {
+    onPopupBlocked?.();
+    return;
+  }
+  w.document.open();
+  w.document.write(ensureHtmlDoc(html, title));
+  w.document.close();
+}
 
 function LandingPreview({ html }) {
   const iframeRef = useRef(null);
@@ -171,7 +198,7 @@ function LandingPagesHelpModal({ open, onClose }) {
 
 export default function LandingPagesPage() {
   const { t } = useTranslation();
-  const { hasCampaign, campaign } = useCurrentCampaign();
+  const { hasCampaign, campaignId, campaign } = useCurrentCampaign();
   const campaignLandingPageId = campaign?.landingPageId ?? campaign?.landingPage?.id;
   const isInCurrentCampaign = (pageId) => hasCampaign && Number(campaignLandingPageId) === Number(pageId);
   const [pages, setPages] = useState([]);
@@ -185,17 +212,43 @@ export default function LandingPagesPage() {
   const [activeTab, setActiveTab] = useState("html"); // "html" | "preview"
   const htmlRef = useRef(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const previewUrlRef = useRef("");
+  const [previewUrl, setPreviewUrl] = useState("");  
   const [searchQuery, setSearchQuery] = useState("");
   const [previewState, setPreviewState] = useState({ open: false, title: "", html: "" });
   const [helpOpen, setHelpOpen] = useState(false);
-  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
   const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
-
   const [applyingCampaign, setApplyingCampaign] = useState(false);
 
+  useEffect(() => {
+    // revoke staré URL
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = "";
+    }
+
+    if (!form.html) {
+      setPreviewUrl("");
+      return;
+    }
+
+    const title = form?.name ? `Náhled: ${form.name}` : "Náhled landing page";
+    const doc = ensureHtmlDoc(form.html, title);
+    const url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
+
+    previewUrlRef.current = url;
+    setPreviewUrl(url);
+
+    return () => {
+      if (previewUrlRef.current === url) {
+        URL.revokeObjectURL(url);
+        previewUrlRef.current = "";
+      }
+    };
+  }, [form.html, form.name]);
+
   async function applyToCampaign(page) {
-    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
-    if (!campaignId || campaignId === "__none__") {
+    if (!hasCampaign || !campaignId) {
       window.alert("Nejdřív vyber kampaň v horním panelu.");
       return;
     }
@@ -258,6 +311,37 @@ export default function LandingPagesPage() {
     setPreviewState((p) => ({ ...p, open: false }));
   }
 
+  function escapeHtmlTitle(s) {
+    return String(s || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function ensureHtmlDoc(html, title) {
+    const raw = String(html || "");
+    if (/<html[\s>]/i.test(raw)) return raw;
+    return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtmlTitle(
+      title || "Náhled"
+    )}</title></head><body>${raw}</body></html>`;
+  }
+
+  function openHtmlInNewTab(html, title) {
+    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+    if (!w) {
+      setError("Prohlížeč zablokoval otevření nové karty. Povol pop-up pro tuto stránku.");
+      return;
+    }
+    w.document.open();
+    w.document.write(ensureHtmlDoc(html, title));
+    w.document.close();
+  }
+
+  function openFormPreviewInNewTab() {
+    openHtmlInNewTab(form.html || "", form?.name ? `Náhled: ${form.name}` : "Náhled landing page");
+  }
+    
   const filteredPages = useMemo(() => {
     const q = (searchQuery || "").trim().toLowerCase();
     if (!q) return pages;
@@ -608,7 +692,7 @@ export default function LandingPagesPage() {
                       : "border-gray-200"
                   } ${
                     isInCurrentCampaign(page.id)
-                      ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.25),0_0_16px_rgba(71,101,238,0.18)]"
+                      ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 ring-2 ring-[var(--brand-strong)]/25 shadow-[0_0_0_1px_rgba(46,36,211,0.28),0_0_28px_rgba(71,101,238,0.34)]"
                       : ""
                   }`}
                   onClick={() => setSelectedId(page.id)}
@@ -837,13 +921,31 @@ export default function LandingPagesPage() {
               >
                 {t("content.landingPages.preview.title") || "Náhled"}
               </button>
-              <button
-                type="button"
-                onClick={() => setAssetPickerOpen(true)}
-                className="ml-auto mr-3 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Vložit obrázek
-              </button>              
+              {activeTab === "html" && (
+                <div className="ml-auto mr-3 flex items-center gap-2">
+                  <div className="ml-auto mr-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAssetPickerOpen(true)}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Vložit obrázek
+                    </button>
+                    <a
+                      href={previewUrl || undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Otevřít náhled na nové kartě"
+                      className={[
+                        "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium",
+                        previewUrl ? "text-gray-700 hover:bg-gray-50" : "text-gray-400 opacity-60 pointer-events-none",
+                      ].join(" ")}
+                    >
+                      Náhled
+                    </a>
+                  </div>
+                </div>
+              )}             
             </div>
 
             <div className="flex-1 p-3">

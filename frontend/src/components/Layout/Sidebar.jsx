@@ -30,8 +30,8 @@ const NAV_VISIBILITY = {
   "nav.recipients.groups": false,
   "nav.recipients.rules": false,
 
-  "nav.reports.title": false,
-  "nav.reports.overview": false,
+  "nav.reports.title": true,
+  "nav.reports.overview": true,
   "nav.reports.delivery": false,
   "nav.reports.security": false,
   "nav.reports.audit": false,
@@ -127,17 +127,18 @@ function TransitionNavLink({ to, replace, onNavigate, onClick, ...props }) {
   );
 }
 
-function Leaf({ to, label, onNavigate }) {
+function Leaf({ to, label, onNavigate, end = false }) {
   return (
     <TransitionNavLink
       to={to}
+      end={end}
       onNavigate={onNavigate}
       className={({ isActive }) =>
         [
           "block w-full rounded-md transition-colors border border-transparent",
           UI.leafPad,
           UI.leafTxt,
-          isActive ? UI.leafActive : UI.leafIdle
+          isActive ? UI.leafActive : UI.leafIdle,
         ].join(" ")
       }
     >
@@ -246,9 +247,15 @@ function Group({ node, t, currentPath, onNavigate }) {
             className={[UI.indent, UI.leafBlockTop, UI.leafBlockBottom].join(" ")}
           >
             <div className={UI.leafGap}>
-              {(node.children || []).map((c) => (
-                <Leaf key={c.to} to={c.to} label={getNavLabel(t, c.key)} onNavigate={onNavigate} />
-              ))}
+            {(node.children || []).map((c) => (
+              <Leaf
+                key={c.to}
+                to={c.to}
+                end={!!node.overview && c.to === node.overview}
+                label={getNavLabel(t, c.key)}
+                onNavigate={onNavigate}
+              />
+            ))}
             </div>
           </motion.div>
         )}

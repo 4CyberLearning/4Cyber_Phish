@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import ReactQuill from "react-quill";
-import "react-quill/dist/quill.snow.css";
 import {
   listTemplates,
   createTemplate,
@@ -21,34 +19,7 @@ const EMPTY_TEMPLATE = {
   subject: "",
   bodyHtml: "",
   tags: [],
-  difficulty: 1,
 };
-
-const buildQuillModules = (handleImage) => ({
-  toolbar: {
-    container: [
-      [{ header: [1, 2, 3, false] }],
-      ["bold", "italic", "underline"],
-      [{ list: "ordered" }, { list: "bullet" }],
-      ["link", "image"],
-      ["clean"],
-    ],
-    handlers: {
-      image: handleImage,
-    },
-  },
-});
-
-const quillFormats = [
-  "header",
-  "bold",
-  "italic",
-  "underline",
-  "list",
-  "bullet",
-  "link",
-  "image",
-];
 
 function EmailPreview({ html, className = "w-full h-[600px] rounded-lg border border-gray-200 bg-white" }) {
   const iframeRef = useRef(null);
@@ -86,15 +57,9 @@ function TemplateHelpModal({ open, onClose }) {
   if (!open) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[999999] bg-black/50"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[999999] bg-black/50" onClick={onClose}>
       <div className="h-full w-full overflow-y-auto p-4">
-        <div
-          className="mx-auto mt-10 w-full max-w-3xl"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="mx-auto mt-10 w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
           <div className="overflow-hidden rounded-xl bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
               <div className="text-sm font-semibold">Nápověda k e-mailovým šablonám</div>
@@ -169,20 +134,12 @@ function TemplatePreviewModal({ open, onClose, title, html }) {
   if (!open) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[999999] bg-black/60"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[999999] bg-black/60" onClick={onClose}>
       <div className="h-full w-full overflow-y-auto p-4">
-        <div
-          className="mx-auto mt-10 w-full max-w-[1100px]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="mx-auto mt-10 w-full max-w-[1100px]" onClick={(e) => e.stopPropagation()}>
           <div className="overflow-hidden rounded-xl bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <div className="text-sm font-semibold truncate">
-                {title || "Náhled šablony"}
-              </div>
+              <div className="text-sm font-semibold truncate">{title || "Náhled šablony"}</div>
               <button
                 type="button"
                 onClick={onClose}
@@ -193,10 +150,7 @@ function TemplatePreviewModal({ open, onClose, title, html }) {
             </div>
 
             <div className="p-4">
-              <EmailPreview
-                html={html}
-                className="w-full h-[70vh] rounded-lg border border-gray-200 bg-white"
-              />
+              <EmailPreview html={html} className="w-full h-[70vh] rounded-lg border border-gray-200 bg-white" />
             </div>
           </div>
         </div>
@@ -206,11 +160,39 @@ function TemplatePreviewModal({ open, onClose, title, html }) {
   );
 }
 
+function escapeHtmlTitle(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function ensureHtmlDoc(html, title) {
+  const raw = String(html || "");
+  if (/<html[\s>]/i.test(raw)) return raw;
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtmlTitle(
+    title || "Náhled"
+  )}</title></head><body>${raw}</body></html>`;
+}
+
+function openHtmlInNewTab(html, title, onPopupBlocked) {
+  const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+  if (!w) {
+    onPopupBlocked?.();
+    return;
+  }
+  w.document.open();
+  w.document.write(ensureHtmlDoc(html, title));
+  w.document.close();
+}
+
 export default function EmailTemplatesPage() {
   const { t } = useTranslation();
-  const quillRef = useRef(null);
 
-  const { hasCampaign, campaign } = useCurrentCampaign();
+  const htmlRef = useRef(null);
+
+  const { hasCampaign, campaignId, campaign } = useCurrentCampaign();
   const campaignEmailTemplateId = campaign?.emailTemplateId ?? campaign?.emailTemplate?.id;
   const isInCurrentCampaign = (tplId) => hasCampaign && Number(campaignEmailTemplateId) === Number(tplId);
 
@@ -227,23 +209,17 @@ export default function EmailTemplatesPage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  const [activeTab, setActiveTab] = useState("editor"); // "editor" | "html" | "preview"
+  const [activeTab, setActiveTab] = useState("html"); // "html" | "preview"
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
 
-  // NEW: vyhledávání v select view
   const [searchQuery, setSearchQuery] = useState("");
-
-  // NEW: help + preview modaly
   const [helpOpen, setHelpOpen] = useState(false);
   const [previewState, setPreviewState] = useState({ open: false, title: "", html: "" });
-  const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
-  const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
 
   const [applyingCampaign, setApplyingCampaign] = useState(false);
 
   async function applyToCampaign(tpl) {
-    const campaignId = localStorage.getItem(SELECTED_CAMPAIGN_KEY);
-    if (!campaignId || campaignId === "__none__") {
+    if (!hasCampaign || !campaignId) {
       window.alert("Nejdřív vyber kampaň v horním panelu.");
       return;
     }
@@ -254,9 +230,7 @@ export default function EmailTemplatesPage() {
 
     try {
       await updateCampaign(Number(campaignId), { emailTemplateId: Number(tpl.id) });
-      window.dispatchEvent(
-        new CustomEvent(CAMPAIGN_UPDATED_EVENT, { detail: { id: String(campaignId), step: "email" } })
-      );
+      window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId), step: "email" } }));
       setSuccess("E-mail šablona byla nastavena pro vybranou kampaň.");
     } catch (e) {
       setError(e?.message || "Nepodařilo se nastavit e-mail šablonu pro kampaň");
@@ -278,15 +252,37 @@ export default function EmailTemplatesPage() {
     setPreviewState((p) => ({ ...p, open: false }));
   }
 
+  function insertIntoHtmlAtCursor(snippet) {
+    const el = htmlRef.current;
+    const value = form.bodyHtml || "";
+
+    if (!el || typeof el.selectionStart !== "number") {
+      setField("bodyHtml", value + "\n" + snippet);
+      return;
+    }
+
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+
+    const next = value.slice(0, start) + snippet + value.slice(end);
+    setField("bodyHtml", next);
+
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + snippet.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
   function handlePickAsset(url) {
-    const quill = quillRef.current?.getEditor();
-    if (!quill || !url) return;
+    if (!url) return;
+    insertIntoHtmlAtCursor(`\n<img src="${url}" alt="" />\n`);
+  }
 
-    const range = quill.getSelection(true);
-    const index = range ? range.index : 0;
-
-    quill.insertEmbed(index, "image", url);
-    quill.setSelection(index + 1);
+  function openFormPreviewInNewTab() {
+    openHtmlInNewTab(form.bodyHtml || "", form?.name ? `Náhled: ${form.name}` : "Náhled e-mailu", () => {
+      setError("Prohlížeč zablokoval otevření nové karty. Povol pop-up pro tuto stránku.");
+    });
   }
 
   useEffect(() => {
@@ -317,6 +313,11 @@ export default function EmailTemplatesPage() {
     });
   }, [templates, searchQuery]);
 
+  const currentTpl = useMemo(() => {
+    if (!hasCampaign || !campaignEmailTemplateId) return null;
+    return templates.find((x) => Number(x?.id) === Number(campaignEmailTemplateId)) || null;
+  }, [hasCampaign, campaignEmailTemplateId, templates]);
+
   function handleNew() {
     setForm(EMPTY_TEMPLATE);
     setTestEmail("");
@@ -330,10 +331,6 @@ export default function EmailTemplatesPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleImageUpload() {
-    setAssetPickerOpen(true);
-  }
-
   function handleUseAsBase(tpl) {
     setSelectedTemplateId(tpl.id);
     setForm({
@@ -342,7 +339,6 @@ export default function EmailTemplatesPage() {
       subject: tpl.subject || "",
       bodyHtml: tpl.bodyHtml || "",
       tags: tpl.tags || [],
-      difficulty: tpl.difficulty ?? 1,
     });
     setActiveTab("html");
     setSuccess(null);
@@ -358,7 +354,6 @@ export default function EmailTemplatesPage() {
       subject: tpl.subject || "",
       bodyHtml: tpl.bodyHtml || "",
       tags: tpl.tags || [],
-      difficulty: tpl.difficulty ?? 1,
     });
     setActiveTab("html");
     setSuccess(null);
@@ -394,9 +389,7 @@ export default function EmailTemplatesPage() {
       return;
     }
 
-    const duplicate = templates.find(
-      (tpl) => tpl.name.trim().toLowerCase() === name.toLowerCase() && tpl.id !== form.id
-    );
+    const duplicate = templates.find((tpl) => tpl.name.trim().toLowerCase() === name.toLowerCase() && tpl.id !== form.id);
 
     const ok = duplicate
       ? window.confirm(
@@ -429,7 +422,6 @@ export default function EmailTemplatesPage() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        difficulty: Number(form.difficulty) || 1,
       };
 
       const saved = form.id ? await updateTemplate(form.id, payload) : await createTemplate(payload);
@@ -442,7 +434,6 @@ export default function EmailTemplatesPage() {
           subject: saved.subject || "",
           bodyHtml: saved.bodyHtml || "",
           tags: saved.tags || [],
-          difficulty: saved.difficulty ?? 1,
         });
       }
       setSuccess(t("content.emailTemplates.messages.saved"));
@@ -474,7 +465,6 @@ export default function EmailTemplatesPage() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        difficulty: Number(form.difficulty) || 1,
       };
 
       const saved = await createTemplate(payload);
@@ -487,7 +477,6 @@ export default function EmailTemplatesPage() {
           subject: saved.subject || "",
           bodyHtml: saved.bodyHtml || "",
           tags: saved.tags || [],
-          difficulty: saved.difficulty ?? 1,
         });
       }
       setSuccess(t("content.emailTemplates.messages.saved"));
@@ -541,19 +530,15 @@ export default function EmailTemplatesPage() {
     }
   }
 
-  const tagsString =
-    typeof form.tags === "string" ? form.tags : Array.isArray(form.tags) ? form.tags.join(", ") : "";
+  const tagsString = typeof form.tags === "string" ? form.tags : Array.isArray(form.tags) ? form.tags.join(", ") : "";
 
   return (
     <div className="flex h-full flex-col gap-4">
-      {/* hlavička + přepínač režimu + search + help */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-gray-900">
-                {t("content.emailTemplates.title")}
-              </h1>
+              <h1 className="text-xl font-semibold text-gray-900">{t("content.emailTemplates.title")}</h1>
               <button
                 type="button"
                 onClick={() => setHelpOpen(true)}
@@ -591,24 +576,16 @@ export default function EmailTemplatesPage() {
               <button
                 type="button"
                 onClick={() => setViewMode("select")}
-                className={`rounded-full px-3 py-1.5 ${
-                  viewMode === "select"
-                    ? "bg-[var(--brand-strong)] text-white"
-                    : "text-gray-600"
-                }`}
+                className={`rounded-full px-3 py-1.5 ${viewMode === "select" ? "bg-[var(--brand-strong)] text-white" : "text-gray-600"}`}
               >
                 {t("content.emailTemplates.view.select") || "Výběr šablon"}
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode("edit")}
-                className={`rounded-full px-3 py-1.5 ${
-                  viewMode === "edit"
-                    ? "bg-[var(--brand-strong)] text-white"
-                    : "text-gray-600"
-                }`}
+                className={`rounded-full px-3 py-1.5 ${viewMode === "edit" ? "bg-[var(--brand-strong)] text-white" : "text-gray-600"}`}
               >
-                {t("content.emailTemplates.view.edit") || "Editor"}
+                {t("content.emailTemplates.view.edit") || "Úprava"}
               </button>
             </div>
 
@@ -626,9 +603,7 @@ export default function EmailTemplatesPage() {
       {(error || success) && (
         <div className="rounded-2xl bg-white p-4 shadow-sm text-sm">
           {error && (
-            <div className="mb-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-              {error}
-            </div>
+            <div className="mb-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">{error}</div>
           )}
           {success && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
@@ -638,7 +613,6 @@ export default function EmailTemplatesPage() {
         </div>
       )}
 
-      {/* REŽIM: VÝBĚR ŠABLON */}
       {viewMode === "select" && (
         <div className="flex-1 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           {loading ? (
@@ -650,37 +624,30 @@ export default function EmailTemplatesPage() {
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               {filteredTemplates.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    className={`relative flex flex-col rounded-xl border px-3 py-2 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
-                      tpl.id === selectedTemplateId
-                        ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]"
-                        : "border-gray-300/70 bg-white"
-                    } ${
-                      isInCurrentCampaign(tpl.id)
-                        ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.25),0_0_16px_rgba(71,101,238,0.18)]"
-                        : ""
-                    }`}
-                    onClick={() => setSelectedTemplateId(tpl.id)}
-                  >
-                    {isInCurrentCampaign(tpl.id) && (
-                      <span className="absolute right-2 top-2 rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
-                        V aktuální kampani
-                      </span>
-                    )}
+                <div
+                  key={tpl.id}
+                  className={`relative flex flex-col rounded-xl border px-3 py-2 text-sm shadow-sm transition hover:shadow-md hover:border-[var(--brand-strong)] ${
+                    tpl.id === selectedTemplateId ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]" : "border-gray-300/70 bg-white"
+                  } ${
+                    isInCurrentCampaign(tpl.id)
+                      ? "border-[var(--brand-strong)] bg-[var(--brand-soft)]/30 ring-2 ring-[var(--brand-strong)]/25 shadow-[0_0_0_1px_rgba(46,36,211,0.28),0_0_28px_rgba(71,101,238,0.34)]"
+                      : ""
+                  }`}
+                  onClick={() => setSelectedTemplateId(tpl.id)}
+                >
+                  {isInCurrentCampaign(tpl.id) && (
+                    <span className="absolute right-2 top-2 rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                      V aktuální kampani
+                    </span>
+                  )}
+
                   <div className="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-medium text-gray-900">{tpl.name}</div>
-                      <div className="text-xs text-gray-500">{tpl.subject}</div>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-gray-900">{tpl.name}</div>
+                      <div className="truncate text-xs text-gray-500">{tpl.subject}</div>
                     </div>
-                    {tpl.difficulty != null && (
-                      <div className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">
-                        {t("content.emailTemplates.fields.difficulty") || "Diff"}: {tpl.difficulty}
-                      </div>
-                    )}
                   </div>
 
-                  {/* drobný náhled + klik pro zvětšení */}
                   <div
                     className="mb-2 overflow-hidden rounded-md border border-gray-200 bg-white hover:border-[var(--brand-strong)]"
                     onClick={(e) => {
@@ -693,10 +660,7 @@ export default function EmailTemplatesPage() {
                       <iframe
                         title={`tpl-thumb-${tpl.id}`}
                         sandbox=""
-                        srcDoc={
-                          tpl.bodyHtml ||
-                          "<!doctype html><html><body><p style='font-family:Arial'>No content.</p></body></html>"
-                        }
+                        srcDoc={tpl.bodyHtml || "<!doctype html><html><body><p style='font-family:Arial'>No content.</p></body></html>"}
                         className="pointer-events-none absolute"
                         style={{
                           width: 600,
@@ -714,17 +678,13 @@ export default function EmailTemplatesPage() {
                   {tpl.tags && tpl.tags.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1">
                       {tpl.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600"
-                        >
+                        <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">
                           {tag}
                         </span>
                       ))}
                     </div>
                   )}
 
-                  {/* 3 tlačítka: použít / editovat / smazat */}
                   <div className={`mt-auto grid gap-2 pt-2 ${hasCampaign ? "grid-cols-4" : "grid-cols-3"}`}>
                     <button
                       type="button"
@@ -747,6 +707,7 @@ export default function EmailTemplatesPage() {
                     >
                       {t("content.emailTemplates.actions.editOriginal") || "Editovat"}
                     </button>
+
                     <button
                       type="button"
                       onClick={(e) => {
@@ -758,6 +719,7 @@ export default function EmailTemplatesPage() {
                     >
                       {t("common.delete") || "Smazat"}
                     </button>
+
                     {hasCampaign && (
                       <button
                         type="button"
@@ -768,8 +730,8 @@ export default function EmailTemplatesPage() {
                         disabled={applyingCampaign || isInCurrentCampaign(tpl.id)}
                         className={`rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-60 ${
                           isInCurrentCampaign(tpl.id)
-                            ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)] dark:bg-white/10"
-                            : "border-slate-200/70 bg-white/20 text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                            ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)]"
+                            : "border-slate-200/70 bg-white/20 text-slate-700 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)]"
                         }`}
                       >
                         {isInCurrentCampaign(tpl.id) ? "V kampani" : "Do kampaně"}
@@ -783,7 +745,6 @@ export default function EmailTemplatesPage() {
         </div>
       )}
 
-      {/* REŽIM: EDITOR */}
       {viewMode === "edit" && (
         <>
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -796,9 +757,7 @@ export default function EmailTemplatesPage() {
             >
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    {t("content.emailTemplates.fields.name")}
-                  </label>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">{t("content.emailTemplates.fields.name")}</label>
                   <input
                     type="text"
                     value={form.name}
@@ -808,9 +767,7 @@ export default function EmailTemplatesPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    {t("content.emailTemplates.fields.subject")}
-                  </label>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">{t("content.emailTemplates.fields.subject")}</label>
                   <input
                     type="text"
                     value={form.subject}
@@ -820,34 +777,15 @@ export default function EmailTemplatesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-[2fr,1fr] gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    {t("content.emailTemplates.fields.tags")}
-                  </label>
-                  <input
-                    type="text"
-                    value={tagsString}
-                    onChange={(e) => setField("tags", e.target.value)}
-                    placeholder={t("content.emailTemplates.fields.tagsPlaceholder")}
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    {t("content.emailTemplates.fields.difficulty")}
-                  </label>
-                  <select
-                    value={form.difficulty}
-                    onChange={(e) => setField("difficulty", e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  >
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                  </select>
-                </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">{t("content.emailTemplates.fields.tags")}</label>
+                <input
+                  type="text"
+                  value={tagsString}
+                  onChange={(e) => setField("tags", e.target.value)}
+                  placeholder={t("content.emailTemplates.fields.tagsPlaceholder")}
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                />
               </div>
 
               <div className="mt-1 flex items-center justify-between gap-3">
@@ -905,57 +843,58 @@ export default function EmailTemplatesPage() {
           </div>
 
           <div className="flex min-h-[520px] flex-1 flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex items-center border-b border-gray-200 text-xs font-medium">
-              <button
-                type="button"
-                onClick={() => setActiveTab("editor")}
-                className={`px-4 py-2 ${
-                  activeTab === "editor"
-                    ? "border-b-2 border-[var(--brand-strong)] text-[var(--brand-strong)]"
-                    : "text-gray-500"
-                }`}
-              >
-                {t("content.emailTemplates.view.edit") || "Editor"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("html")}
-                className={`px-4 py-2 ${
-                  activeTab === "html"
-                    ? "border-b-2 border-[var(--brand-strong)] text-[var(--brand-strong)]"
-                    : "text-gray-500"
-                }`}
-              >
-                HTML
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("preview")}
-                className={`px-4 py-2 ${
-                  activeTab === "preview"
-                    ? "border-b-2 border-[var(--brand-strong)] text-[var(--brand-strong)]"
-                    : "text-gray-500"
-                }`}
-              >
-                {t("content.emailTemplates.preview.title")}
-              </button>
+            <div className="flex items-center justify-between border-b border-gray-200 text-xs font-medium">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("html")}
+                  className={`px-4 py-2 ${
+                    activeTab === "html"
+                      ? "border-b-2 border-[var(--brand-strong)] text-[var(--brand-strong)]"
+                      : "text-gray-500"
+                  }`}
+                >
+                  HTML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("preview")}
+                  className={`px-4 py-2 ${
+                    activeTab === "preview"
+                      ? "border-b-2 border-[var(--brand-strong)] text-[var(--brand-strong)]"
+                      : "text-gray-500"
+                  }`}
+                >
+                  {t("content.emailTemplates.preview.title")}
+                </button>
+              </div>
+
+              {activeTab === "html" && (
+                <div className="flex items-center gap-2 pr-3">
+                  <button
+                    type="button"
+                    onClick={() => setAssetPickerOpen(true)}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Vložit obrázek
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openFormPreviewInNewTab}
+                    disabled={!form.bodyHtml}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    title="Otevřít náhled na nové kartě"
+                  >
+                    Náhled
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 p-3">
-              {activeTab === "editor" && (
-                <ReactQuill
-                  ref={quillRef}
-                  theme="snow"
-                  value={form.bodyHtml}
-                  onChange={(value) => setField("bodyHtml", value)}
-                  modules={buildQuillModules(handleImageUpload)}
-                  formats={quillFormats}
-                  className="h-full min-h-[420px]"
-                />
-              )}
-
               {activeTab === "html" && (
                 <textarea
+                  ref={htmlRef}
                   value={form.bodyHtml}
                   onChange={(e) => setField("bodyHtml", e.target.value)}
                   className="h-full min-h-[420px] w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
@@ -976,19 +915,10 @@ export default function EmailTemplatesPage() {
         </>
       )}
 
-      <AssetPickerModal
-        open={assetPickerOpen}
-        onClose={() => setAssetPickerOpen(false)}
-        onPick={handlePickAsset}
-      />
+      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onPick={handlePickAsset} />
 
       <TemplateHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <TemplatePreviewModal
-        open={previewState.open}
-        onClose={closePreview}
-        title={previewState.title}
-        html={previewState.html}
-      />
+      <TemplatePreviewModal open={previewState.open} onClose={closePreview} title={previewState.title} html={previewState.html} />
     </div>
   );
 }

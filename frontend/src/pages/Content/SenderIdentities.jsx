@@ -26,12 +26,23 @@ const EMPTY_IDENTITY = {
   id: null,
   name: "",
   fromName: "",
+  fromEmail: "",
   localPart: "",
   senderDomainId: "",
   replyTo: "",
   note: "",
   isDefault: false,
 };
+
+function parseEmail(raw) {
+  const v = String(raw || "").trim();
+  const m = v.match(/^([^@\s]+)@([^@\s]+)$/);
+  if (!m) return null;
+  const localPart = String(m[1] || "").trim().toLowerCase();
+  const domain = String(m[2] || "").trim().toLowerCase();
+  if (!localPart || !domain || !domain.includes(".")) return null;
+  return { localPart, domain };
+}
 
 function formatSender(identity) {
   if (!identity) return "";
@@ -65,18 +76,27 @@ export default function SenderIdentitiesPage() {
 
   const [domainSearch, setDomainSearch] = useState("");
   const [identitySearch, setIdentitySearch] = useState("");
+  const [showAdvancedIdentity, setShowAdvancedIdentity] = useState(false);
   const [applyingCampaign, setApplyingCampaign] = useState(false);
 
   const identityPreview = useMemo(() => {
-    const local = (identityForm.localPart || "").trim();
+    const parsed = parseEmail(identityForm.fromEmail);
+
+    const fallbackLocal = (identityForm.localPart || "").trim();
     const domId = identityForm.senderDomainId ? Number(identityForm.senderDomainId) : null;
     const dom = domains.find((d) => Number(d.id) === Number(domId));
-    const email = local && dom?.domain ? `${local}@${dom.domain}` : "";
+
+    const email = parsed
+      ? `${parsed.localPart}@${parsed.domain}`
+      : fallbackLocal && dom?.domain
+      ? `${fallbackLocal}@${dom.domain}`
+      : "";
+
     const fromName = (identityForm.fromName || "").trim();
 
     if (fromName && email) return `${fromName} <${email}>`;
     return email || fromName || "—";
-  }, [identityForm.localPart, identityForm.senderDomainId, identityForm.fromName, domains]);
+  }, [identityForm.fromEmail, identityForm.localPart, identityForm.senderDomainId, identityForm.fromName, domains]);
 
   async function applyIdentityToCampaign() {
     if (!hasCampaign) {
@@ -178,15 +198,29 @@ export default function SenderIdentitiesPage() {
   }
 
   function handleIdentityField(field, value) {
-    setIdentityForm((prev) => ({
-      ...prev,
-      [field]:
-        field === "isDefault"
-          ? !!value
-          : field === "senderDomainId" && value
-          ? Number(value)
-          : value,
-    }));
+    setIdentityForm((prev) => {
+      if (field === "fromEmail") {
+        const next = { ...prev, fromEmail: value };
+        const parsed = parseEmail(value);
+        if (parsed) {
+          next.localPart = parsed.localPart;
+          const match = domains.find((d) => String(d?.domain || "").toLowerCase() === parsed.domain);
+          if (match?.id) next.senderDomainId = Number(match.id);
+        }
+        return next;
+      }
+
+      return {
+        ...prev,
+        [field]:
+          field === "isDefault"
+            ? !!value
+            : field === "senderDomainId" && value
+            ? Number(value)
+            : value,
+      };
+    });
+
     setSuccess(null);
     setError(null);
   }
@@ -257,21 +291,44 @@ export default function SenderIdentitiesPage() {
     setSuccess(null);
 
     const name = (identityForm.name || "").trim();
-    const localPart = (identityForm.localPart || "").trim();
-    const senderDomainId = identityForm.senderDomainId
-      ? Number(identityForm.senderDomainId)
-      : null;
+    const fromEmail = (identityForm.fromEmail || "").trim();
 
-    if (!name) {
-      setError("Zadejte název identity.");
-      return;
+    let localPart = (identityForm.localPart || "").trim();
+    let senderDomainId = identityForm.senderDomainId ? Number(identityForm.senderDomainId) : null;
+
+    if (fromEmail) {
+      const parsed = parseEmail(fromEmail);
+      if (!parsed) {
+        setError("Zadejte platnou adresu ve tvaru uzivatel@domena.tld.");
+        return;
+      }
+
+      localPart = parsed.localPart;
+
+      let dom = domains.find((d) => String(d?.domain || "").toLowerCase() === parsed.domain);
+
+      if (!dom) {
+        try {
+          await createSenderDomain({ domain: parsed.domain, description: "", isDefault: false });
+        } catch {
+          // ignore (např. už existuje)
+        }
+
+        const doms = await listSenderDomains();
+        const arr = Array.isArray(doms) ? doms : [];
+        setDomains(arr);
+        dom = arr.find((d) => String(d?.domain || "").toLowerCase() === parsed.domain);
+      }
+
+      senderDomainId = dom?.id ? Number(dom.id) : null;
     }
+
     if (!localPart) {
-      setError("Zadejte local-part (část před @).");
+      setError("Zadejte e-mail (nebo local-part).");
       return;
     }
     if (!senderDomainId) {
-      setError("Vyberte doménu pro identitu.");
+      setError("Vyberte doménu pro identitu (nebo vyplňte e-mail).");
       return;
     }
 
@@ -300,6 +357,10 @@ export default function SenderIdentitiesPage() {
         id: saved.id,
         name: saved.name || name,
         fromName: saved.fromName || "",
+        fromEmail:
+          saved.localPart && saved.senderDomain?.domain
+            ? `${saved.localPart}@${saved.senderDomain.domain}`
+            : fromEmail || "",
         localPart: saved.localPart || localPart,
         senderDomainId: saved.senderDomainId || senderDomainId,
         replyTo: saved.replyTo || "",
@@ -414,16 +475,10 @@ export default function SenderIdentitiesPage() {
               </div>
 
               <label className="flex items-center gap-2 text-[11px] text-gray-700">
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div className="text-[11px] font-semibold text-gray-700">Výsledná identita</div>
-                  <div className="mt-1 font-mono text-[12px] text-gray-900 break-all">{identityPreview}</div>
-                </div>
                 <input
                   type="checkbox"
                   checked={!!domainForm.isDefault}
-                  onChange={(e) =>
-                    handleDomainField("isDefault", e.target.checked)
-                  }
+                  onChange={(e) => handleDomainField("isDefault", e.target.checked)}
                 />
                 Nastavit jako výchozí doménu
               </label>
@@ -580,41 +635,70 @@ export default function SenderIdentitiesPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-[1.2fr,1.2fr]">
-                <div>
-                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                    Local-part (před @)
-                  </label>
-                  <input
-                    type="text"
-                    value={identityForm.localPart}
-                    onChange={(e) =>
-                      handleIdentityField("localPart", e.target.value)
-                    }
-                    placeholder="např. hr"
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                    Doména
-                  </label>
-                  <select
-                    value={identityForm.senderDomainId || ""}
-                    onChange={(e) =>
-                      handleIdentityField("senderDomainId", e.target.value)
-                    }
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                  From e-mail (doporučeno)
+                </label>
+                <input
+                  type="text"
+                  value={identityForm.fromEmail}
+                  onChange={(e) => handleIdentityField("fromEmail", e.target.value)}
+                  placeholder="např. hr@phish.firma.cz"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                />
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <div className="text-[10px] text-gray-500">
+                    Doména se při uložení případně vytvoří automaticky.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedIdentity((v) => !v)}
+                    className="text-[11px] font-semibold text-[var(--brand-strong)] hover:underline"
                   >
-                    <option value="">– vyber doménu –</option>
-                    {domains.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.domain}
-                        {d.isDefault ? " (výchozí)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                    {showAdvancedIdentity ? "Skrýt rozšířené" : "Zobrazit rozšířené"}
+                  </button>
                 </div>
+              </div>
+
+              {showAdvancedIdentity && (
+                <div className="grid gap-3 md:grid-cols-[1.2fr,1.2fr]">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                      Local-part (před @)
+                    </label>
+                    <input
+                      type="text"
+                      value={identityForm.localPart}
+                      onChange={(e) => handleIdentityField("localPart", e.target.value)}
+                      placeholder="např. hr"
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                      Doména
+                    </label>
+                    <select
+                      value={identityForm.senderDomainId || ""}
+                      onChange={(e) => handleIdentityField("senderDomainId", e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    >
+                      <option value="">– vyber doménu –</option>
+                      {domains.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.domain}
+                          {d.isDefault ? " (výchozí)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-[11px] font-semibold text-gray-700">Výsledná identita</div>
+                <div className="mt-1 font-mono text-[12px] text-gray-900 break-all">{identityPreview}</div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -741,9 +825,12 @@ export default function SenderIdentitiesPage() {
                         id: i.id,
                         name: i.name || "",
                         fromName: i.fromName || "",
+                        fromEmail:
+                          i.localPart && i.senderDomain?.domain
+                            ? `${i.localPart}@${i.senderDomain.domain}`
+                            : "",
                         localPart: i.localPart || "",
-                        senderDomainId:
-                          i.senderDomainId || i.senderDomain?.id || "",
+                        senderDomainId: i.senderDomainId || i.senderDomain?.id || "",
                         replyTo: i.replyTo || "",
                         note: i.note || "",
                         isDefault: !!i.isDefault,
@@ -753,7 +840,7 @@ export default function SenderIdentitiesPage() {
                       identityForm.id === i.id ? "bg-[var(--brand-soft)]" : ""
                     } ${
                       isInCurrentCampaign(i.id)
-                        ? "bg-[var(--brand-soft)]/30 shadow-[0_0_0_1px_rgba(46,36,211,0.20)]"
+                        ? "bg-[var(--brand-soft)]/30 ring-2 ring-[var(--brand-strong)]/25 shadow-[0_0_0_1px_rgba(46,36,211,0.28),0_0_28px_rgba(71,101,238,0.34)]"
                         : ""
                     }`}
                   >

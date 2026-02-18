@@ -26,9 +26,43 @@ async function getTenantId() {
 
 function normalizeUserInput(body = {}) {
   const email = String(body.email || "").trim().toLowerCase();
-  const fullName = body.fullName ? String(body.fullName).trim() : null;
-  const department = body.department ? String(body.department).trim() : null;
-  const role = body.role ? String(body.role).trim() : null;
+
+  const firstName =
+    body.firstName != null && String(body.firstName).trim() !== ""
+      ? String(body.firstName).trim()
+      : null;
+
+  const lastName =
+    body.lastName != null && String(body.lastName).trim() !== ""
+      ? String(body.lastName).trim()
+      : null;
+
+  const fullNameRaw =
+    body.fullName != null && String(body.fullName).trim() !== ""
+      ? String(body.fullName).trim()
+      : null;
+
+  const fullName =
+    fullNameRaw || `${firstName || ""} ${lastName || ""}`.trim() || null;
+
+  const department =
+    body.department != null && String(body.department).trim() !== ""
+      ? String(body.department).trim()
+      : null;
+
+  const role =
+    body.role != null && String(body.role).trim() !== ""
+      ? String(body.role).trim()
+      : null;
+
+  // custom: jen custom1..custom20
+  const rawCustom = body.custom && typeof body.custom === "object" ? body.custom : {};
+  const custom = {};
+  for (let i = 1; i <= 20; i++) {
+    const k = `custom${i}`;
+    const v = rawCustom[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") custom[k] = String(v);
+  }
 
   let groupIds = [];
 
@@ -36,45 +70,43 @@ function normalizeUserInput(body = {}) {
   if (Array.isArray(body.groupIds)) {
     groupIds = body.groupIds;
   }
-
   // 2) Varianta: "groups" jako pole (ID nebo objekty { id, name })
   else if (Array.isArray(body.groups)) {
     groupIds = body.groups;
   }
-
   // 3) Varianta: "groups" jako mapa { "1": true, "2": false, ... }
   else if (body.groups && typeof body.groups === "object") {
     const tmp = [];
     for (const [key, value] of Object.entries(body.groups)) {
       if (!value) continue;
-      // value může být true, nebo třeba { id: 1, name: "..." }
-      if (typeof value === "object" && value !== null && "id" in value) {
-        tmp.push(Number(value.id));
-      } else {
-        tmp.push(Number(key));
-      }
+      if (typeof value === "object" && value !== null && "id" in value) tmp.push(Number(value.id));
+      else tmp.push(Number(key));
     }
     groupIds = tmp;
   }
 
-  // Finální normalizace: jen kladná celá čísla, bez duplicit
   const normalizedGroupIds = Array.from(
     new Set(
       (groupIds || [])
         .map((g) => {
-          if (typeof g === "number" || typeof g === "string") {
-            return Number(g);
-          }
-          if (g && typeof g === "object" && "id" in g) {
-            return Number(g.id);
-          }
+          if (typeof g === "number" || typeof g === "string") return Number(g);
+          if (g && typeof g === "object" && "id" in g) return Number(g.id);
           return NaN;
         })
         .filter((id) => Number.isInteger(id) && id > 0)
     )
   );
 
-  return { email, fullName, department, role, groupIds: normalizedGroupIds };
+  return {
+    email,
+    firstName,
+    lastName,
+    fullName,
+    department,
+    role,
+    custom: Object.keys(custom).length ? custom : null,
+    groupIds: normalizedGroupIds,
+  };
 }
 
 function domainOfEmail(email) {
@@ -109,9 +141,12 @@ function formatUser(row) {
   return {
     id: row.id,
     email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
     fullName: row.fullName,
     department: row.department,
     role: row.role,
+    custom: row.custom,
     groups: (row.groupLinks || []).map((gm) => ({
       id: gm.groupId,
       name: gm.group?.name ?? "",
@@ -119,7 +154,6 @@ function formatUser(row) {
     createdAt: row.createdAt,
   };
 }
-
 /* ===== GROUPS ===== */
 
 router.get("/groups", async (_req, res) => {
@@ -234,6 +268,75 @@ router.delete("/groups/:id", async (req, res) => {
   }
 });
 
+// GET /api/groups/:id/users?take=50&skip=0&q=...
+router.get("/groups/:id/users", async (req, res) => {
+  const groupId = Number(req.params.id);
+  const take = Math.min(Number(req.query.take ?? 50) || 50, 200);
+  const skip = Number(req.query.skip ?? 0) || 0;
+  const q = String(req.query.q ?? "").trim().toLowerCase();
+
+  if (!Number.isInteger(groupId)) {
+    return res.status(400).json({ error: "Invalid groupId" });
+  }
+
+  try {
+    const tenantId = await getTenantId();
+
+    const group = await prisma.group.findFirst({
+      where: { id: groupId, tenantId },
+      select: { id: true },
+    });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    // Pozn.: recipients.js dnes pracuje hlavně s fullName.
+    // Pokud máš v DB firstName/lastName, přidej je do OR (viz níže v části 2).
+    const userFilter = {
+      tenantId,
+      ...(q
+        ? {
+            OR: [
+              { email: { contains: q, mode: "insensitive" } },
+              { fullName: { contains: q, mode: "insensitive" } },
+              { department: { contains: q, mode: "insensitive" } },
+              { role: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, items] = await Promise.all([
+      prisma.groupMember.count({
+        where: { groupId, user: userFilter },
+      }),
+      prisma.groupMember.findMany({
+        where: { groupId, user: userFilter },
+        orderBy: { joinedAt: "desc" },
+        skip,
+        take,
+        select: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              fullName: true,
+              department: true,
+              role: true,
+              custom: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return res.json({ total, items: items.map((x) => x.user) });
+  } catch (e) {
+    console.error("GET /groups/:id/users failed", e);
+    return res.status(500).json({ error: e?.message || "Failed" });
+  }
+});
+
 /* ===== USERS ===== */
 
 router.get("/users", async (req, res) => {
@@ -276,9 +379,8 @@ router.get("/users", async (req, res) => {
 router.post("/users", async (req, res) => {
   try {
     const tenantId = await getTenantId();
-    const { email, fullName, department, role, groupIds } =
+    const { email, firstName, lastName, fullName, department, role, custom, groupIds } =
       normalizeUserInput(req.body || {});
-    
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
@@ -296,9 +398,12 @@ router.post("/users", async (req, res) => {
       data: {
         tenantId,
         email,
+        firstName,
+        lastName,
         fullName,
         department,
         role,
+        custom,
       },
     });
 
@@ -329,6 +434,96 @@ router.post("/users", async (req, res) => {
   }
 });
 
+// POST /api/users/import  { groupId, users:[{email,firstName,lastName,custom:{custom1..custom20}}] }
+router.post("/users/import", async (req, res) => {
+  const groupId = Number(req.body?.groupId);
+  const users = req.body?.users;
+
+  if (!Number.isInteger(groupId)) return res.status(400).json({ error: "groupId is required" });
+  if (!Array.isArray(users)) return res.status(400).json({ error: "users must be an array" });
+
+  try {
+    const tenantId = await getTenantId();
+
+    const group = await prisma.group.findFirst({
+      where: { id: groupId, tenantId },
+      select: { id: true, name: true },
+    });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    let imported = 0;
+    let skipped = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of users) {
+        const email = String(row?.email || "").trim().toLowerCase();
+        if (!email) {
+          skipped++;
+          continue;
+        }
+
+        // respektuj allowlist (pokud je nastaven)
+        await assertRecipientEmailAllowed(tenantId, email);
+
+        // Minimálně fullName (kompatibilita s aktuálním schema.prisma v repu)
+        const firstName = String(row?.firstName || "").trim();
+        const lastName = String(row?.lastName || "").trim();
+        const fullName = String(row?.fullName || "").trim() || `${firstName} ${lastName}`.trim() || null;
+
+        // custom ignorujeme, dokud není v DB (viz část 2 níže)
+        // Pokud custom v DB máš, doplň jeho uložení.
+
+        // Pozor: v aktuálním schema.prisma je email @unique globálně.
+        // Tady to držíme jednoduše pro demo tenant.
+        const existing = await tx.user.findUnique({
+          where: { email },
+          select: { id: true, tenantId: true },
+        });
+
+        let userId;
+
+        if (!existing) {
+          const created = await tx.user.create({
+            data: {
+              tenantId,
+              email,
+              fullName,
+            },
+            select: { id: true },
+          });
+          userId = created.id;
+        } else {
+          if (existing.tenantId !== tenantId) {
+            skipped++;
+            continue;
+          }
+          const updated = await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              fullName,
+            },
+            select: { id: true },
+          });
+          userId = updated.id;
+        }
+
+        await tx.groupMember.upsert({
+          where: { userId_groupId: { userId, groupId } },
+          create: { userId, groupId },
+          update: {},
+        });
+
+        imported++;
+      }
+    });
+
+    return res.json({ ok: true, imported, skipped });
+  } catch (e) {
+    console.error("POST /users/import failed", e);
+    return res.status(500).json({ error: e?.message || "Failed" });
+  }
+});
+
 router.put("/users/:id", async (req, res) => {
   try {
     const tenantId = await getTenantId();
@@ -344,7 +539,7 @@ router.put("/users/:id", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { email, fullName, department, role, groupIds } =
+    const { email, firstName, lastName, fullName, department, role, custom, groupIds } =
       normalizeUserInput(req.body || {});
 
     if (!email) {
@@ -356,9 +551,12 @@ router.put("/users/:id", async (req, res) => {
       where: { id },
       data: {
         email,
+        firstName,
+        lastName,
         fullName,
         department,
         role,
+        custom,
       },
     });
 

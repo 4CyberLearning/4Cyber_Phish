@@ -1,290 +1,349 @@
-// frontend/src/pages/Users.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { useTranslation } from "react-i18next";
-import {
-  listUsers,
-  createUser,
-  updateUser,
-  deleteUser,
-  listGroups,
-  createGroup,
-  deleteGroup,
-} from "../api/users";
-import { updateCampaign } from "../api/campaigns";
+import { listGroups, createGroup, updateGroup, deleteGroup, createUser, updateUser, deleteUser } from "../api/users";
+import { listGroupUsers, importUsersToGroup } from "../api/users";
+import { setCampaignTargetsGroup } from "../api/campaigns";
 import { useCurrentCampaign } from "../hooks/useCurrentCampaign";
 
 const EMPTY_USER = {
   id: null,
   email: "",
-  fullName: "",
+  firstName: "",
+  lastName: "",
   department: "",
   role: "",
-  groupIds: [],
+  custom: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`custom${i + 1}`, ""])),
 };
+
+function normalizeHeader(h) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[_-]/g, "");
+}
+
+function pickRowValue(row, key) {
+  // row keys mohou být normalizované i originál
+  const nkey = normalizeHeader(key);
+  for (const k of Object.keys(row)) {
+    if (normalizeHeader(k) === nkey) return row[k];
+  }
+  return undefined;
+}
+
+function toImportUser(row) {
+  const email = String(pickRowValue(row, "email") ?? "").trim();
+  const firstName =
+    String(pickRowValue(row, "jmeno") ?? pickRowValue(row, "firstname") ?? "").trim();
+  const lastName =
+    String(pickRowValue(row, "prijmeni") ?? pickRowValue(row, "lastname") ?? "").trim();
+
+  const custom = {};
+  for (let i = 1; i <= 20; i++) {
+    const v = pickRowValue(row, `custom${i}`);
+    if (v !== undefined && v !== null && String(v).trim() !== "") custom[`custom${i}`] = String(v);
+  }
+
+  return {
+    email,
+    firstName,
+    lastName,
+    custom,
+  };
+}
 
 export default function UsersPage() {
   const { t } = useTranslation();
   const { hasCampaign, campaignId, campaign } = useCurrentCampaign();
-  const campaignUserIdSet = useMemo(() => {
-    const set = new Set();
-    const items = campaign?.targetUsers || [];
-    for (const cu of items) {
-      const uid = cu?.userId ?? cu?.user?.id;
-      if (uid) set.add(Number(uid));
-    }
-    return set;
-  }, [campaign]);
-  const isInCurrentCampaign = (userId) =>
-    hasCampaign && campaignUserIdSet.has(Number(userId));
-  const [users, setUsers] = useState([]);
+
   const [groups, setGroups] = useState([]);
-  const [selectedGroupKey, setSelectedGroupKey] = useState("all"); // "all" | "ungrouped" | groupId
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+
+  // group users paging/search
+  const [q, setQ] = useState("");
+  const [take] = useState(50);
+  const [skip, setSkip] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [groupUsers, setGroupUsers] = useState([]);
+
+  // group edit/create
+  const [groupMode, setGroupMode] = useState("view"); // view | create | edit
+  const [groupName, setGroupName] = useState("");
+  const groupInputRef = useRef(null);
+
+  // user editor
   const [selectedUserId, setSelectedUserId] = useState(null);
-  const [form, setForm] = useState(EMPTY_USER);
-  const [loading, setLoading] = useState(false);
+  const [userForm, setUserForm] = useState(EMPTY_USER);
+  const [showCustom, setShowCustom] = useState(false);
+
+  // status
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [applyingCampaign, setApplyingCampaign] = useState(false);
   const [error, setError] = useState(null);
-  const [applyingToCampaign, setApplyingToCampaign] = useState(false);
   const [success, setSuccess] = useState(null);
 
+  const campaignGroupId = campaign?.targetGroupId ?? null;
+
+  const sortedGroups = useMemo(() => {
+    const arr = Array.isArray(groups) ? [...groups] : [];
+    arr.sort((a, b) => {
+      const aid = Number(a.id);
+      const bid = Number(b.id);
+
+      if (campaignGroupId && aid === Number(campaignGroupId)) return -1;
+      if (campaignGroupId && bid === Number(campaignGroupId)) return 1;
+
+      return String(a.name || "").localeCompare(String(b.name || ""), "cs");
+    });
+    return arr;
+  }, [groups, campaignGroupId]);
+
+  const selectedGroup = useMemo(() => {
+    if (!selectedGroupId) return null;
+    return groups.find((g) => Number(g.id) === Number(selectedGroupId)) || null;
+  }, [groups, selectedGroupId]);
+
   useEffect(() => {
-    loadData();
+    loadGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function loadData() {
-    setLoading(true);
+  useEffect(() => {
+    // auto select: skupina z kampaně (pokud existuje), jinak první
+    if (!selectedGroupId) {
+      if (campaignGroupId) setSelectedGroupId(Number(campaignGroupId));
+      else if (sortedGroups.length) setSelectedGroupId(Number(sortedGroups[0].id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedGroups.length, campaignGroupId]);
+
+  useEffect(() => {
+    if (!selectedGroupId) return;
+    loadGroupUsers({ resetSkip: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGroupId]);
+
+  async function loadGroups() {
+    setLoadingGroups(true);
     setError(null);
     try {
-      const [u, g] = await Promise.all([listUsers(), listGroups()]);
-      setUsers(Array.isArray(u) ? u : []);
+      const g = await listGroups();
       setGroups(Array.isArray(g) ? g : []);
     } catch (e) {
-      setError(e.message);
+      setError(e?.message || "Nepodařilo se načíst skupiny.");
     } finally {
-      setLoading(false);
+      setLoadingGroups(false);
     }
   }
 
-  function resetForm() {
-    setSelectedUserId(null);
-    setForm(EMPTY_USER);
+  async function loadGroupUsers({ resetSkip } = {}) {
+    if (!selectedGroupId) return;
+    setLoadingUsers(true);
     setError(null);
-    setSuccess(null);
-  }
-
-  function setField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function toggleGroupInForm(groupId) {
-    setForm((prev) => {
-      const set = new Set(prev.groupIds || []);
-      if (set.has(groupId)) {
-        set.delete(groupId);
-      } else {
-        set.add(groupId);
-      }
-      return {
-        ...prev,
-        groupIds: Array.from(set),
-      };
-    });
-  }
-
-  const filteredUsers = useMemo(() => {
-    if (selectedGroupKey === "all") return users;
-
-    if (selectedGroupKey === "ungrouped") {
-      return users.filter((u) => !u.groups || u.groups.length === 0);
-    }
-
-    const groupId =
-      typeof selectedGroupKey === "number"
-        ? selectedGroupKey
-        : Number(selectedGroupKey);
-
-    if (!groupId) return users;
-
-    return users.filter((u) =>
-      u.groups?.some((g) => g.id === groupId)
-    );
-  }, [users, selectedGroupKey]);
-
-  async function applyFilteredToCampaign() {
-    if (!hasCampaign) return;
-
-    const userIds = filteredUsers.map((u) => u.id).filter((id) => Number.isInteger(id) || typeof id === "number");
-    setApplyingToCampaign(true);
-    setError(null);
-    setSuccess(null);
-
     try {
-      await updateCampaign(Number(campaignId), { userIds });
-      window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId) } }));
-      setSuccess(`Příjemci kampaně byli nastaveni (${userIds.length}).`);
+      const nextSkip = resetSkip ? 0 : skip;
+      const data = await listGroupUsers(selectedGroupId, { take, skip: nextSkip, q });
+      setGroupUsers(Array.isArray(data?.items) ? data.items : []);
+      setTotal(Number(data?.total || 0));
+      if (resetSkip) setSkip(0);
     } catch (e) {
-      setError(e?.message || "Nepodařilo se nastavit příjemce do kampaně.");
+      setError(e?.message || "Nepodařilo se načíst uživatele skupiny.");
     } finally {
-      setApplyingToCampaign(false);
+      setLoadingUsers(false);
     }
   }
 
-  function handleSelectUser(u) {
-    setSelectedUserId(u.id);
-    setForm({
-      id: u.id,
-      email: u.email || "",
-      fullName: u.fullName || "",
-      department: u.department || "",
-      role: u.role || "",
-      groupIds:
-        u.groups?.map((g) => g.id).filter((id) => !!id) || [],
-    });
-    setError(null);
-    setSuccess(null);
+  function resetUserEditor() {
+    setSelectedUserId(null);
+    setUserForm(EMPTY_USER);
+    setShowCustom(false);
   }
 
-  async function handleSaveUser(e) {
-    if (e) e.preventDefault();
+  function openCreateGroup() {
+    setGroupMode("create");
+    setGroupName("");
+    setTimeout(() => groupInputRef.current?.focus(), 0);
+  }
 
-    const email = (form.email || "").trim().toLowerCase();
-    if (!email) {
-      setError(
-        t("content.recipients.messages.emailRequired") ||
-          "E-mail je povinný."
-      );
+  function openEditGroup() {
+    if (!selectedGroup) return;
+    setGroupMode("edit");
+    setGroupName(selectedGroup.name || "");
+    setTimeout(() => groupInputRef.current?.focus(), 0);
+  }
+
+  function cancelGroupEdit() {
+    setGroupMode("view");
+    setGroupName("");
+  }
+
+  async function saveGroup(e) {
+    e?.preventDefault?.();
+    const name = String(groupName || "").trim();
+    if (!name) {
+      setError("Název skupiny je povinný.");
       return;
     }
 
     setSaving(true);
     setError(null);
     setSuccess(null);
+
+    try {
+      if (groupMode === "edit" && selectedGroup?.id) {
+        await updateGroup(selectedGroup.id, { name });
+        setSuccess("Skupina byla upravena.");
+      } else {
+        const created = await createGroup({ name });
+        setSuccess("Skupina byla vytvořena.");
+        if (created?.id) setSelectedGroupId(Number(created.id));
+      }
+      setGroupMode("view");
+      await loadGroups();
+    } catch (e2) {
+      setError(e2?.message || "Nepodařilo se uložit skupinu.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeGroup() {
+    if (!selectedGroup?.id) return;
+    if (!window.confirm(`Opravdu chcete smazat skupinu "${selectedGroup.name}"?`)) return;
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteGroup(selectedGroup.id);
+      setSuccess("Skupina byla smazána.");
+      setSelectedGroupId(null);
+      resetUserEditor();
+      await loadGroups();
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se smazat skupinu.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyGroupToCampaign() {
+    if (!hasCampaign) {
+      setError("Nejdřív vyber kampaň v horním panelu.");
+      return;
+    }
+    if (!selectedGroup?.id) return;
+
+    setApplyingCampaign(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const r = await setCampaignTargetsGroup(Number(campaignId), Number(selectedGroup.id));
+      window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId) } }));
+      setSuccess(`Skupina byla nastavena do kampaně (${r?.count ?? "OK"}).`);
+      await loadGroups();
+    } catch (e) {
+      setError(e?.message || "Nepodařilo se nastavit skupinu do kampaně.");
+    } finally {
+      setApplyingCampaign(false);
+    }
+  }
+
+  function selectUser(u) {
+    setSelectedUserId(u.id);
+    setUserForm({
+      id: u.id,
+      email: u.email || "",
+      firstName: u.firstName || "",
+      lastName: u.lastName || "",
+      department: u.department || "",
+      role: u.role || "",
+      custom: {
+        ...EMPTY_USER.custom,
+        ...(u.custom && typeof u.custom === "object" ? u.custom : {}),
+      },
+    });
+  }
+
+  async function saveUser(e) {
+    e?.preventDefault?.();
+    if (!selectedGroup?.id) {
+      setError("Nejdřív vyber skupinu.");
+      return;
+    }
+
+    const email = String(userForm.email || "").trim().toLowerCase();
+    if (!email) {
+      setError("E-mail je povinný.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
     try {
       const payload = {
         email,
-        fullName: (form.fullName || "").trim(),
-        department: (form.department || "").trim(),
-        role: (form.role || "").trim(),
-        groupIds: form.groupIds || [],
+        firstName: String(userForm.firstName || "").trim(),
+        lastName: String(userForm.lastName || "").trim(),
+        department: String(userForm.department || "").trim(),
+        role: String(userForm.role || "").trim(),
+        custom: userForm.custom,
+        groupIds: [Number(selectedGroup.id)], // primárně držíme usera ve vybrané skupině
       };
 
-      let saved;
-      if (form.id) {
-        saved = await updateUser(form.id, payload);
-      } else {
-        saved = await createUser(payload);
-      }
+      if (userForm.id) await updateUser(userForm.id, payload);
+      else await createUser(payload);
 
-      await loadData();
-
-      if (saved && saved.id) {
-        setSelectedUserId(saved.id);
-        setForm({
-          id: saved.id,
-          email: saved.email || "",
-          fullName: saved.fullName || "",
-          department: saved.department || "",
-          role: saved.role || "",
-          groupIds:
-            saved.groups?.map((g) => g.id).filter((id) => !!id) || [],
-        });
-      } else {
-        resetForm();
-      }
-
-      setSuccess(
-        t("content.recipients.messages.saved") || "Příjemce uložen."
-      );
-    } catch (e) {
-      setError(e.message);
+      setSuccess(userForm.id ? "Uživatel byl upraven." : "Uživatel byl přidán.");
+      resetUserEditor();
+      await loadGroupUsers();
+      await loadGroups();
+    } catch (e2) {
+      setError(e2?.message || "Nepodařilo se uložit uživatele.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDeleteUser() {
-    if (!form.id) return;
-    if (
-      !window.confirm(
-        t("content.recipients.messages.confirmDeleteUser") ||
-          "Opravdu chcete tohoto příjemce smazat?"
-      )
-    ) {
-      return;
-    }
+  async function removeUser() {
+    if (!userForm.id) return;
+    if (!window.confirm("Opravdu chcete tohoto uživatele smazat?")) return;
 
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      await deleteUser(form.id);
-      await loadData();
-      resetForm();
-      setSuccess(
-        t("content.recipients.messages.deleted") || "Příjemce byl smazán."
-      );
+      await deleteUser(userForm.id);
+      setSuccess("Uživatel byl smazán.");
+      resetUserEditor();
+      await loadGroupUsers();
+      await loadGroups();
     } catch (e) {
-      setError(e.message);
+      setError(e?.message || "Nepodařilo se smazat uživatele.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleCreateGroup() {
-    const name = window.prompt(
-      t("content.recipients.messages.newGroupPrompt") ||
-        "Zadejte název nové skupiny:"
-    );
-    if (!name) return;
-
-    setError(null);
-    setSuccess(null);
-    try {
-      const group = await createGroup({ name });
-      setGroups((prev) => [...prev, group]);
-      setSuccess(
-        t("content.recipients.messages.groupCreated") ||
-          "Skupina vytvořena."
-      );
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  async function handleDeleteGroup(groupId) {
-    if (
-      !window.confirm(
-        t("content.recipients.messages.confirmDeleteGroup") ||
-          "Opravdu chcete tuto skupinu smazat? Členství uživatelů bude odstraněno."
-      )
-    ) {
+  async function importFile() {
+    if (!selectedGroup?.id) {
+      setError("Nejdřív vyber skupinu, do které chceš importovat.");
       return;
     }
 
-    setError(null);
-    setSuccess(null);
-    try {
-      await deleteGroup(groupId);
-      setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      setSelectedGroupKey("all");
-      await loadData();
-      setSuccess(
-        t("content.recipients.messages.groupDeleted") ||
-          "Skupina byla smazána."
-      );
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  async function handleImportCsv() {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".csv,text/csv";
+    input.accept = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     input.onchange = async () => {
-      const file = input.files && input.files[0];
+      const file = input.files?.[0];
       if (!file) return;
 
       setImporting(true);
@@ -292,66 +351,44 @@ export default function UsersPage() {
       setSuccess(null);
 
       try {
-        const text = await file.text();
-        // jednoduchý CSV parser: očekává hlavičku email;fullName;department;role nebo CSV s čárkami
-        const lines = text
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
+        let rows = [];
 
-        if (!lines.length) {
-          throw new Error("Soubor neobsahuje žádná data.");
-        }
+        if (file.name.toLowerCase().endsWith(".csv")) {
+          const text = await file.text();
+          const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+          if (lines.length < 2) throw new Error("CSV neobsahuje data.");
 
-        const header = lines[0]
-          .split(/[;,]/)
-          .map((h) => h.trim().toLowerCase());
-        const idxEmail = header.indexOf("email");
-        const idxName = header.indexOf("fullname");
-        const idxDept = header.indexOf("department");
-        const idxRole = header.indexOf("role");
+          const delim = lines[0].includes(";") ? ";" : ",";
+          const headers = lines[0].split(delim).map((h) => h.trim());
 
-        if (idxEmail === -1) {
-          throw new Error(
-            "CSV musí obsahovat sloupec 'email' (např. email;fullName;department;role)."
-          );
-        }
-
-        let imported = 0;
-        let failed = 0;
-
-        // jednoduchý sekvenční import
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(/[;,]/).map((v) => v.trim());
-          const email = parts[idxEmail] || "";
-          if (!email) {
-            failed++;
-            continue;
+          for (let i = 1; i < lines.length; i++) {
+            const parts = lines[i].split(delim);
+            const obj = {};
+            headers.forEach((h, idx) => (obj[h] = parts[idx] ?? ""));
+            rows.push(obj);
           }
-
-          const payload = {
-            email,
-            fullName: idxName !== -1 ? parts[idxName] || "" : "",
-            department: idxDept !== -1 ? parts[idxDept] || "" : "",
-            role: idxRole !== -1 ? parts[idxRole] || "" : "",
-            groupIds: [],
-          };
-
-          try {
-            await createUser(payload);
-            imported++;
-          } catch {
-            failed++;
-          }
+        } else {
+          const buf = await file.arrayBuffer();
+          const wb = XLSX.read(buf, { type: "array" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
         }
 
-        await loadData();
+        const users = rows.map(toImportUser).filter((u) => u.email);
 
-        setSuccess(
-          `Import dokončen: ${imported} řádků úspěšně, ${failed} neúspěšně.`
+        if (!users.length) throw new Error("Nenalezen žádný validní e-mail v souboru.");
+
+        const ok = window.confirm(
+          `Importuješ ${users.length} uživatelů do skupiny "${selectedGroup.name}". Pokračovat?`
         );
+        if (!ok) return;
+
+        const r = await importUsersToGroup(Number(selectedGroup.id), users);
+        setSuccess(`Import hotový: ${r?.imported ?? "?"} importováno, ${r?.skipped ?? 0} přeskočeno.`);
+        await loadGroupUsers({ resetSkip: true });
+        await loadGroups();
       } catch (e) {
-        setError(e.message);
+        setError(e?.message || "Import se nezdařil.");
       } finally {
         setImporting(false);
       }
@@ -360,380 +397,365 @@ export default function UsersPage() {
     input.click();
   }
 
+  const inCampaign = selectedGroup?.id && campaignGroupId && Number(selectedGroup.id) === Number(campaignGroupId);
+
   return (
-    <div className="flex h-full flex-col gap-4">
-      {/* hlavička */}
+    <div className="space-y-4">
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {t("content.recipients.title") || "Příjemci kampaní"}
-            </h1>
-            <p className="text-xs text-gray-500">
-              Správa uživatelů a skupin, které budou cílem phishingových
-              kampaní.
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Příjemci (Skupiny)</h1>
+            <p className="mt-1 text-xs text-gray-600 max-w-2xl">
+              Vyber skupinu vlevo. Vpravo spravuješ uživatele skupiny (import / přidání / edit / smazání) a můžeš ji nastavit do aktuální kampaně.
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleImportCsv}
-              disabled={importing}
-              className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              {t("content.recipients.actions.importCsv") || "Import CSV"}
-            </button>
-            <button
-              type="button"
-              onClick={handleCreateGroup}
-              className="rounded-full border border-[var(--brand-strong)] px-3 py-1 text-xs font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)]"
-            >
-              {t("content.recipients.actions.newGroup") || "Nová skupina"}
-            </button>
-            {hasCampaign && (
-              <button
-                type="button"
-                onClick={applyFilteredToCampaign}
-                disabled={applyingToCampaign || filteredUsers.length === 0}
-                title="Nastaví aktuálně vyfiltrované příjemce do aktuální kampaně (přepíše stávající seznam)."
-                className="rounded-full border border-[var(--brand-strong)]/40 bg-[var(--brand-strong)]/5 px-3 py-1 text-xs font-medium text-[var(--brand-strong)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
-              >
-                Nastavit filtr do kampaně ({filteredUsers.length})
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-full bg-[var(--brand-strong)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--brand-soft-dark)]"
-            >
-              {t("content.recipients.actions.newUser") || "Nový příjemce"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={openCreateGroup}
+            className="rounded-full border border-[var(--brand-strong)] px-3 py-1 text-xs font-semibold text-[var(--brand-strong)] hover:bg-[var(--brand-soft)]"
+          >
+            + Nová skupina
+          </button>
         </div>
       </div>
 
       {(error || success) && (
-        <div className="rounded-2xl bg-white p-4 shadow-sm text-sm">
-          {error && (
-            <div className="mb-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
-              {success}
-            </div>
-          )}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+          {success && <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div>}
         </div>
       )}
 
-      {/* hlavní layout: vlevo skupiny, vpravo tabulka + formulář */}
-      <div className="flex-1 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        {loading ? (
-          <div className="text-sm text-gray-500">
-            {t("common.loading") || "Načítání..."}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[240px,1fr]">
-            {/* panel skupin */}
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-              <div className="mb-2 text-xs font-semibold uppercase text-gray-500">
-                {t("content.recipients.groups.title") || "Skupiny"}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-4 lg:grid-cols-[320px,1fr]">
+          {/* LEFT: groups */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+            {loadingGroups ? (
+              <div className="text-xs text-gray-500">Načítám skupiny…</div>
+            ) : (
+              <div className="space-y-2">
+                {sortedGroups.map((g) => {
+                  const active = Number(g.id) === Number(selectedGroupId);
+                  const cg = campaignGroupId && Number(g.id) === Number(campaignGroupId);
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedGroupId(Number(g.id));
+                        setSkip(0);
+                        setQ("");
+                        resetUserEditor();
+                        setGroupMode("view");
+                      }}
+                      className={[
+                        "w-full rounded-xl px-3 py-2 text-left border transition",
+                        active ? "bg-[var(--brand-soft)] border-[var(--brand-strong)]/20" : "bg-white/50 border-transparent hover:bg-white/80",
+                        cg ? "ring-2 ring-[var(--brand-strong)]/40 shadow-[0_0_0_3px_rgba(46,36,211,0.10),0_12px_30px_rgba(15,23,42,0.10)]" : "",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-gray-900">{g.name}</div>
+                          {cg && (
+                            <div className="mt-1 inline-flex rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
+                              V aktuální kampani
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-gray-500">{g.memberCount ?? ""}</div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedGroupKey("all")}
-                  className={`flex items-center justify-between rounded-md px-2 py-1 text-xs ${
-                    selectedGroupKey === "all"
-                      ? "bg-[var(--brand-soft)] text-[var(--brand-strong)]"
-                      : "text-gray-700 hover:bg-white"
-                  }`}
-                >
-                  <span>
-                    {t("content.recipients.groups.all") || "Všichni příjemci"}
-                  </span>
-                  <span className="text-[10px] text-gray-500">
-                    {users.length}
-                  </span>
-                </button>
+            )}
+          </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedGroupKey("ungrouped")}
-                  className={`flex items-center justify-between rounded-md px-2 py-1 text-xs ${
-                    selectedGroupKey === "ungrouped"
-                      ? "bg-[var(--brand-soft)] text-[var(--brand-strong)]"
-                      : "text-gray-700 hover:bg-white"
-                  }`}
-                >
-                  <span>
-                    {t("content.recipients.groups.ungrouped") ||
-                      "Bez skupiny"}
-                  </span>
-                  <span className="text-[10px] text-gray-500">
-                    {
-                      users.filter(
-                        (u) => !u.groupLinks || u.groupLinks.length === 0
-                      ).length
-                    }
-                  </span>
-                </button>
-
-                <div className="mt-2 border-t border-gray-200 pt-2">
-                  {groups.length === 0 ? (
-                    <div className="text-[11px] text-gray-500">
-                      {t("content.recipients.groups.empty") ||
-                        "Zatím nemáte žádné skupiny."}
-                    </div>
+          {/* RIGHT: group detail + users */}
+          <div className="space-y-4">
+            {!selectedGroup ? (
+              <div className="text-sm text-gray-500">Vyber skupinu vlevo.</div>
+            ) : (
+              <>
+                {/* group header / actions */}
+                <div className={["rounded-xl border p-3", inCampaign ? "border-[var(--brand-strong)]/25 shadow-[0_0_0_4px_rgba(46,36,211,0.08)]" : "border-gray-200"].join(" ")}>
+                  {groupMode === "create" || groupMode === "edit" ? (
+                    <form onSubmit={saveGroup} className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[220px]">
+                        <label className="mb-1 block text-[11px] font-medium text-gray-700">Název skupiny</label>
+                        <input
+                          ref={groupInputRef}
+                          value={groupName}
+                          onChange={(e) => setGroupName(e.target.value)}
+                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                        />
+                      </div>
+                      <button type="submit" disabled={saving} className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+                        {saving ? "Ukládám…" : "Uložit"}
+                      </button>
+                      <button type="button" onClick={cancelGroupEdit} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                        Zrušit
+                      </button>
+                    </form>
                   ) : (
-                    <div className="flex flex-col gap-1">
-                      {groups.map((g) => (
-                        <div
-                          key={g.id}
-                          className={`flex items-center justify-between rounded-md px-2 py-1 text-xs ${
-                            selectedGroupKey === g.id
-                              ? "bg-[var(--brand-soft)] text-[var(--brand-strong)]"
-                              : "text-gray-700 hover:bg-white"
-                          }`}
-                        >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">{selectedGroup.name}</div>
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          {inCampaign ? "Skupina je nastavena v aktuální kampani." : "Skupina není v aktuální kampani."}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {hasCampaign && (
                           <button
                             type="button"
-                            className="flex-1 text-left"
-                            onClick={() => setSelectedGroupKey(g.id)}
+                            onClick={applyGroupToCampaign}
+                            disabled={applyingCampaign}
+                            className={[
+                              "rounded-md px-3 py-1.5 text-xs font-semibold border",
+                              inCampaign
+                                ? "border-[var(--brand-strong)]/25 bg-[var(--brand-soft)] text-[var(--brand-strong)]"
+                                : "border-gray-300 text-gray-700 hover:bg-gray-50",
+                            ].join(" ")}
                           >
-                            {g.name}
+                            {applyingCampaign ? "Nastavuji…" : inCampaign ? "V kampani" : "Nastavit do kampaně"}
                           </button>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-gray-500">
-                              {g.memberCount ?? 0}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteGroup(g.id)}
-                              className="text-[10px] text-red-500 hover:text-red-700"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        )}
+
+                        <button type="button" onClick={importFile} disabled={importing} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                          {importing ? "Import…" : "Import CSV/XLSX"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetUserEditor();
+                            setSelectedUserId("new");
+                          }}
+                          className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-xs font-semibold text-white"
+                        >
+                          + Přidat uživatele
+                        </button>
+
+                        <button type="button" onClick={openEditGroup} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                          Upravit skupinu
+                        </button>
+
+                        <button type="button" onClick={removeGroup} disabled={saving} className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60">
+                          Smazat skupinu
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
 
-            {/* pravý panel: tabulka + formulář */}
-            <div className="flex flex-col gap-4">
-              {/* tabulka uživatelů */}
-              <div className="rounded-lg border border-gray-200">
-                <div className="border-b border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 flex items-center justify-between">
-                  <span>
-                    {t("content.recipients.users.title") || "Příjemci (uživatelé)"}
-                  </span>
-                  {hasCampaign && (
-                    <span className="text-[11px] font-normal text-gray-500">
-                      V kampani: {campaignUserIdSet.size}
-                    </span>
-                  )}
-                </div>
-                {filteredUsers.length === 0 ? (
-                  <div className="px-3 py-3 text-xs text-gray-500">
-                    {t("content.recipients.users.empty") ||
-                      "Zatím nemáte žádné příjemce."}
+                {/* search + paging */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="Hledat v uživatelích (email/jméno)…"
+                      className="w-[320px] max-w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => loadGroupUsers({ resetSkip: true })}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      Hledat
+                    </button>
                   </div>
-                ) : (
-                  <div className="max-h-72 overflow-auto text-xs">
-                    <table className="min-w-full text-left">
+
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                    <span>
+                      {Math.min(skip + 1, total)}–{Math.min(skip + take, total)} / {total}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={skip === 0}
+                      onClick={() => {
+                        const next = Math.max(0, skip - take);
+                        setSkip(next);
+                        setTimeout(() => loadGroupUsers(), 0);
+                      }}
+                      className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 disabled:opacity-50"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      disabled={skip + take >= total}
+                      onClick={() => {
+                        const next = skip + take;
+                        setSkip(next);
+                        setTimeout(() => loadGroupUsers(), 0);
+                      }}
+                      className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 disabled:opacity-50"
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+
+                {/* users table */}
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="max-h-[360px] overflow-auto">
+                    <table className="min-w-full text-left text-xs">
                       <thead className="bg-gray-50 text-[11px] uppercase text-gray-500">
                         <tr>
-                          <th className="px-3 py-2">E-mail</th>
+                          <th className="px-3 py-2">Email</th>
                           <th className="px-3 py-2">Jméno</th>
-                          <th className="px-3 py-2">Oddělení</th>
-                          <th className="px-3 py-2">Role</th>
-                          <th className="px-3 py-2">Skupiny</th>
+                          <th className="px-3 py-2">Příjmení</th>
+                          <th className="px-3 py-2">Custom</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {filteredUsers.map((u) => (
-                          <tr
-                            key={u.id}
-                            onClick={() => handleSelectUser(u)}
-                            className={`cursor-pointer hover:bg-[var(--brand-soft)] ${
-                              u.id === selectedUserId ? "bg-[var(--brand-soft)]" : ""
-                            } ${
-                              isInCurrentCampaign(u.id) ? "bg-[var(--brand-soft)]/30" : ""
-                            }`}
-                          >
-                            <td className={`px-3 py-1.5 ${isInCurrentCampaign(u.id) ? "border-l-4 border-[var(--brand-strong)]" : ""}`}>
-                              <div className="flex items-center gap-2">
-                                <span>{u.email}</span>
-                                {isInCurrentCampaign(u.id) && (
-                                  <span className="rounded-full bg-[var(--brand-strong)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-strong)] ring-1 ring-[var(--brand-strong)]/25">
-                                    V aktuální kampani
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-1.5">
-                              {u.fullName || <span className="text-gray-400">–</span>}
-                            </td>
-                            <td className="px-3 py-1.5">
-                              {u.department || (
-                                <span className="text-gray-400">–</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-1.5">
-                              {u.role || <span className="text-gray-400">–</span>}
-                            </td>
-                            <td className="px-3 py-1.5">
-                              {u.groups && u.groups.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {u.groups.map((g) => (
-                                    <span
-                                      key={g.id}
-                                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600"
-                                    >
-                                      {g.name || g.id}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">–</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                        {loadingUsers ? (
+                          <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>Načítám…</td></tr>
+                        ) : groupUsers.length === 0 ? (
+                          <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>Žádní uživatelé.</td></tr>
+                        ) : (
+                          groupUsers.map((u) => {
+                            const active = Number(u.id) === Number(selectedUserId);
+                            const customCount = u.custom && typeof u.custom === "object" ? Object.keys(u.custom).length : 0;
+                            return (
+                              <tr
+                                key={u.id}
+                                onClick={() => selectUser(u)}
+                                className={["cursor-pointer hover:bg-[var(--brand-soft)]", active ? "bg-[var(--brand-soft)]" : ""].join(" ")}
+                              >
+                                <td className="px-3 py-2">{u.email}</td>
+                                <td className="px-3 py-2">{u.firstName || "–"}</td>
+                                <td className="px-3 py-2">{u.lastName || "–"}</td>
+                                <td className="px-3 py-2">{customCount ? `${customCount}×` : "–"}</td>
+                              </tr>
+                            );
+                          })
+                        )}
                       </tbody>
                     </table>
                   </div>
+                </div>
+
+                {/* user editor */}
+                {(selectedUserId === "new" || !!userForm.id) && (
+                  <div className="rounded-xl border border-gray-200 p-3">
+                    <form onSubmit={saveUser} className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {userForm.id ? "Upravit uživatele" : "Přidat uživatele"}
+                        </div>
+                        <button type="button" onClick={resetUserEditor} className="text-[11px] text-gray-500 hover:underline">
+                          Zavřít
+                        </button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-gray-700">Email</label>
+                          <input
+                            value={userForm.email}
+                            onChange={(e) => setUserForm((p) => ({ ...p, email: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-gray-700">Jméno</label>
+                          <input
+                            value={userForm.firstName}
+                            onChange={(e) => setUserForm((p) => ({ ...p, firstName: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-gray-700">Příjmení</label>
+                          <input
+                            value={userForm.lastName}
+                            onChange={(e) => setUserForm((p) => ({ ...p, lastName: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-gray-700">Oddělení</label>
+                          <input
+                            value={userForm.department}
+                            onChange={(e) => setUserForm((p) => ({ ...p, department: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-gray-700">Role</label>
+                          <input
+                            value={userForm.role}
+                            onChange={(e) => setUserForm((p) => ({ ...p, role: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCustom((v) => !v)}
+                          className="text-[11px] font-semibold text-[var(--brand-strong)] hover:underline"
+                        >
+                          {showCustom ? "Skrýt custom fields" : "Zobrazit custom fields (1–20)"}
+                        </button>
+
+                        {showCustom && (
+                          <div className="mt-2 grid gap-2 md:grid-cols-4">
+                            {Array.from({ length: 20 }, (_, i) => {
+                              const k = `custom${i + 1}`;
+                              return (
+                                <div key={k}>
+                                  <label className="mb-1 block text-[10px] font-medium text-gray-600">{k}</label>
+                                  <input
+                                    value={userForm.custom?.[k] ?? ""}
+                                    onChange={(e) =>
+                                      setUserForm((p) => ({
+                                        ...p,
+                                        custom: { ...(p.custom || {}), [k]: e.target.value },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex gap-2">
+                          <button type="submit" disabled={saving} className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+                            {saving ? "Ukládám…" : "Uložit"}
+                          </button>
+                          <button type="button" onClick={resetUserEditor} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                            Zrušit
+                          </button>
+                        </div>
+
+                        {userForm.id && (
+                          <button type="button" onClick={removeUser} disabled={saving} className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60">
+                            Smazat
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </div>
                 )}
-              </div>
-
-              {/* formulář pro jednoho uživatele */}
-              <div className="rounded-lg border border-gray-200 p-3 text-xs">
-                <form
-                  className="flex flex-col gap-3"
-                  onSubmit={handleSaveUser}
-                >
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        E-mail
-                      </label>
-                      <input
-                        type="email"
-                        value={form.email}
-                        onChange={(e) => setField("email", e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        Jméno
-                      </label>
-                      <input
-                        type="text"
-                        value={form.fullName}
-                        onChange={(e) => setField("fullName", e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        Oddělení
-                      </label>
-                      <input
-                        type="text"
-                        value={form.department}
-                        onChange={(e) =>
-                          setField("department", e.target.value)
-                        }
-                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        Role / pozice
-                      </label>
-                      <input
-                        type="text"
-                        value={form.role}
-                        onChange={(e) => setField("role", e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                      Skupiny
-                    </label>
-                    {groups.length === 0 ? (
-                      <div className="text-[11px] text-gray-500">
-                        {t("content.recipients.groups.empty") ||
-                          "Zatím nemáte žádné skupiny."}
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {groups.map((g) => (
-                          <label
-                            key={g.id}
-                            className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-3 w-3"
-                              checked={form.groupIds?.includes(g.id) || false}
-                              onChange={() => toggleGroupInForm(g.id)}
-                            />
-                            <span>{g.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap justify-between gap-2">
-                    <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="rounded-md bg-[var(--brand-strong)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
-                      >
-                        {t("content.recipients.actions.save") || "Uložit"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        {t("common.cancel") || "Nový / zrušit"}
-                      </button>
-                    </div>
-
-                    {form.id && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteUser}
-                        disabled={saving}
-                        className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-                      >
-                        {t("common.delete") || "Smazat"}
-                      </button>
-                    )}
-                  </div>
-                </form>
-              </div>
-            </div>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

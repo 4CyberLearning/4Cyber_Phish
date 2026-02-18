@@ -19,6 +19,8 @@ import CampaignLaunch from "./pages/CampaignLaunch";
 import AssetsPage from "./pages/Content/Assets";
 import { apiUrl } from "./api/base";
 import { RouteTransitionProvider } from "./transition/RouteTransition";
+import ReportsOverviewPage from "./pages/Reports/Overview";
+import CampaignSchedule from "./pages/CampaignSchedule";
 
 export default function App() {
   // undefined = loading, null = not logged, object = logged
@@ -84,6 +86,9 @@ export default function App() {
           <Route path="/content/sender-identities" element={<SenderIdentitiesPage />} />
           <Route path="/content/assets" element={<AssetsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/reports" element={<Navigate to="/reports/overview" replace />} />
+          <Route path="/reports/overview" element={<ReportsOverviewPage />} />
+          <Route path="/campaigns/:id/schedule" element={<CampaignSchedule />} />
         </Route>
 
         {/* Default: pokud nejsem přihlášen a dám jinou URL než /login */}

@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCampaign } from "../api/campaigns";
+import { deleteCampaign, getCampaign } from "../api/campaigns";
 
 const SELECTED_CAMPAIGN_KEY = "campaign.selected.v1";
+const LOCK_KEY = "campaign.locked.v1";
 const CAMPAIGN_SELECTED_EVENT = "campaign:selected";
+const CAMPAIGN_CHANGED_EVENT = "campaign:changed";
+const CAMPAIGN_UPDATED_EVENT = "campaign:updated";
+const NONE_ID = "__none__";
 const PREFLIGHT_KEY = "campaign.preflight.v1";
 
 function readJson(key, fallback) {
@@ -105,6 +109,7 @@ export default function CampaignDetail() {
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [preview, setPreview] = useState({ open: false, title: "", doc: "" });
   const [recipientQuery, setRecipientQuery] = useState("");
@@ -203,6 +208,41 @@ export default function CampaignDetail() {
     window.dispatchEvent(new CustomEvent(CAMPAIGN_SELECTED_EVENT, { detail: { id: strId } }));
   }
 
+  async function handleDeleteCampaign() {
+    if (!campaign?.id || deleting) return;
+
+    const name = campaign?.name ? `"${campaign.name}"` : `#${campaign.id}`;
+    if (!window.confirm(`Opravdu chcete smazat kampaň ${name}? Tato akce je nevratná.`)) return;
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      await deleteCampaign(campaign.id);
+
+      // pokud je tato kampaň aktuální v Topbaru, zruš výběr
+      const selected = localStorage.getItem(SELECTED_CAMPAIGN_KEY) || "";
+      if (String(selected) === String(campaign.id)) {
+        localStorage.setItem(LOCK_KEY, "0");
+        localStorage.setItem(SELECTED_CAMPAIGN_KEY, NONE_ID);
+
+        const detail = { id: NONE_ID, force: true, refreshList: true };
+        window.dispatchEvent(new CustomEvent(CAMPAIGN_CHANGED_EVENT, { detail }));
+        window.dispatchEvent(new CustomEvent(CAMPAIGN_SELECTED_EVENT, { detail }));
+      }
+
+      // refresh dropdown listu v Topbaru
+      window.dispatchEvent(new CustomEvent(CAMPAIGN_UPDATED_EVENT, { detail: { refreshList: true } }));
+
+      navigate("/campaigns");
+    } catch (e) {
+      console.error(e);
+      setError(e?.message || "Nepodařilo se smazat kampaň");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PreviewModal
@@ -273,6 +313,15 @@ export default function CampaignDetail() {
             >
               Nastavit jako aktuální
             </button>
+<button
+  type="button"
+  onClick={handleDeleteCampaign}
+  disabled={deleting}
+  className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+  title="Smazat kampaň"
+>
+  {deleting ? "Mažu…" : "Smazat"}
+</button>            
           </div>
         )}
       </div>
