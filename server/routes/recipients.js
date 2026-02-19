@@ -27,54 +27,35 @@ async function getTenantId() {
 function normalizeUserInput(body = {}) {
   const email = String(body.email || "").trim().toLowerCase();
 
-  const firstName =
-    body.firstName != null && String(body.firstName).trim() !== ""
-      ? String(body.firstName).trim()
-      : null;
+  const firstName = body.firstName != null ? String(body.firstName).trim() : null;
+  const lastName = body.lastName != null ? String(body.lastName).trim() : null;
 
-  const lastName =
-    body.lastName != null && String(body.lastName).trim() !== ""
-      ? String(body.lastName).trim()
-      : null;
-
-  const fullNameRaw =
-    body.fullName != null && String(body.fullName).trim() !== ""
-      ? String(body.fullName).trim()
-      : null;
-
+  const fullNameRaw = body.fullName != null ? String(body.fullName).trim() : "";
   const fullName =
-    fullNameRaw || `${firstName || ""} ${lastName || ""}`.trim() || null;
+    fullNameRaw ||
+    (String(firstName || "") + " " + String(lastName || "")).trim() ||
+    null;
 
-  const department =
-    body.department != null && String(body.department).trim() !== ""
-      ? String(body.department).trim()
-      : null;
-
-  const role =
-    body.role != null && String(body.role).trim() !== ""
-      ? String(body.role).trim()
-      : null;
+  const department = body.department != null ? String(body.department).trim() : null;
+  const role = body.role != null ? String(body.role).trim() : null;
 
   // custom: jen custom1..custom20
-  const rawCustom = body.custom && typeof body.custom === "object" ? body.custom : {};
-  const custom = {};
-  for (let i = 1; i <= 20; i++) {
-    const k = `custom${i}`;
-    const v = rawCustom[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") custom[k] = String(v);
+  const rawCustom = body.custom && typeof body.custom === "object" ? body.custom : null;
+  let custom = null;
+  if (rawCustom) {
+    const c = {};
+    for (let i = 1; i <= 20; i++) {
+      const k = `custom${i}`;
+      const v = rawCustom[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") c[k] = String(v);
+    }
+    custom = Object.keys(c).length ? c : null;
   }
 
   let groupIds = [];
 
-  // 1) Standardní varianta: pole ID
-  if (Array.isArray(body.groupIds)) {
-    groupIds = body.groupIds;
-  }
-  // 2) Varianta: "groups" jako pole (ID nebo objekty { id, name })
-  else if (Array.isArray(body.groups)) {
-    groupIds = body.groups;
-  }
-  // 3) Varianta: "groups" jako mapa { "1": true, "2": false, ... }
+  if (Array.isArray(body.groupIds)) groupIds = body.groupIds;
+  else if (Array.isArray(body.groups)) groupIds = body.groups;
   else if (body.groups && typeof body.groups === "object") {
     const tmp = [];
     for (const [key, value] of Object.entries(body.groups)) {
@@ -97,16 +78,7 @@ function normalizeUserInput(body = {}) {
     )
   );
 
-  return {
-    email,
-    firstName,
-    lastName,
-    fullName,
-    department,
-    role,
-    custom: Object.keys(custom).length ? custom : null,
-    groupIds: normalizedGroupIds,
-  };
+  return { email, firstName, lastName, fullName, department, role, custom, groupIds: normalizedGroupIds };
 }
 
 function domainOfEmail(email) {
@@ -381,56 +353,56 @@ router.post("/users", async (req, res) => {
     const tenantId = await getTenantId();
     const { email, firstName, lastName, fullName, department, role, custom, groupIds } =
       normalizeUserInput(req.body || {});
-    if (!email) {
-      return res.status(400).json({ error: "Email is required" });
-    }
+
+    if (!email) return res.status(400).json({ error: "Email is required" });
     await assertRecipientEmailAllowed(tenantId, email);
-    const existing = await prisma.user.findFirst({
-      where: { tenantId, email },
+
+    // email je @unique globálně => hledej přes findUnique(email)
+    const existing = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, tenantId: true },
     });
-    if (existing) {
-      return res
-        .status(400)
-        .json({ error: "User with this email already exists" });
+
+    let userId;
+
+    if (!existing) {
+      const created = await prisma.user.create({
+        data: { tenantId, email, firstName, lastName, fullName, department, role, custom },
+        select: { id: true },
+      });
+      userId = created.id;
+    } else {
+      // pokud bys někdy měl více tenantů, tak toto zabrání “převzetí” cizího usera
+      if (existing.tenantId !== tenantId) {
+        return res.status(400).json({ error: "User with this email exists in another tenant" });
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: existing.id },
+        data: { firstName, lastName, fullName, department, role, custom },
+        select: { id: true },
+      });
+      userId = updated.id;
     }
 
-    const user = await prisma.user.create({
-      data: {
-        tenantId,
-        email,
-        firstName,
-        lastName,
-        fullName,
-        department,
-        role,
-        custom,
-      },
-    });
-
-    if (groupIds.length > 0) {
+    // připoj do skupin (bez duplicit)
+    if (groupIds.length) {
       await prisma.groupMember.createMany({
-        data: groupIds.map((groupId) => ({
-          userId: user.id,
-          groupId,
-        })),
+        data: groupIds.map((groupId) => ({ userId, groupId })),
+        skipDuplicates: true,
       });
     }
 
     const fullUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: {
-        groupLinks: {
-          include: { group: true },
-        },
-      },
+      where: { id: userId },
+      include: { groupLinks: { include: { group: true } } },
     });
 
-    res.status(201).json(formatUser(fullUser));
+    // vracej stejně jako doteď
+    return res.status(existing ? 200 : 201).json(formatUser(fullUser));
   } catch (err) {
     console.error("POST /api/users error", err);
-    res
-      .status(500)
-      .json({ error: err?.message || "Failed to create user" });
+    return res.status(500).json({ error: err?.message || "Failed to create/update user" });
   }
 });
 
