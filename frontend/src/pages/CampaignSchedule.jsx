@@ -37,6 +37,22 @@ function toDatetimeLocalValue(dateLike) {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
+function splitDatetimeLocal(v) {
+  if (!v) return { date: "", hh: "09", mi: "00" };
+  const [date = "", time = ""] = String(v).split("T");
+  const [hh = "09", mi = "00"] = time.split(":");
+  return {
+    date,
+    hh: String(hh).padStart(2, "0"),
+    mi: String(mi).padStart(2, "0"),
+  };
+}
+
+function joinDatetimeLocal(date, hh, mi) {
+  if (!date) return "";
+  return `${date}T${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+}
+
 export default function CampaignSchedule() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -54,7 +70,9 @@ export default function CampaignSchedule() {
     return all[String(campaignId)] || null;
   }, [campaignId]);
 
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [sendDate, setSendDate] = useState("");
+  const [sendHour, setSendHour] = useState("09");
+  const [sendMinute, setSendMinute] = useState("00");
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -74,7 +92,13 @@ export default function CampaignSchedule() {
         setCampaign(data);
 
         const initial = stored?.scheduledAt || data?.scheduledAt;
-        setScheduledAt(toDatetimeLocalValue(initial));
+        const local = toDatetimeLocalValue(initial);
+        const parts = splitDatetimeLocal(local);
+
+        setSendDate(parts.date);
+        setSendHour(parts.hh);
+        setSendMinute(parts.mi);
+
         setDone(!!stored?.done);
       } catch (e) {
         if (!alive) return;
@@ -97,7 +121,9 @@ export default function CampaignSchedule() {
     setSuccess(null);
 
     try {
-      const iso = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+      const local = joinDatetimeLocal(sendDate, sendHour, sendMinute);
+      const iso = local ? new Date(local).toISOString() : null;
+
       if (!iso || Number.isNaN(new Date(iso).getTime())) {
         setError("Vyplň datum a čas (časové okno).");
         return;
@@ -108,7 +134,6 @@ export default function CampaignSchedule() {
       const all = readJson(SCHEDULE_KEY, {});
       all[String(campaignId)] = { done: true, scheduledAt: iso };
       writeJson(SCHEDULE_KEY, all);
-
       window.dispatchEvent(new CustomEvent("campaign:updated", { detail: { id: String(campaignId), step: "schedule" } }));
       setDone(true);
       setSuccess("Časová okna byla uložena.");
@@ -169,12 +194,43 @@ export default function CampaignSchedule() {
           <div className="space-y-4 max-w-xl">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">Odeslat v</label>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
-              />
+                <div className="grid gap-2 sm:grid-cols-[1fr,120px,120px]">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Datum</label>
+                    <input
+                      type="date"
+                      value={sendDate}
+                      onChange={(e) => setSendDate(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Hodina</label>
+                    <select
+                      value={sendHour}
+                      onChange={(e) => setSendHour(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    >
+                      {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Minuta</label>
+                    <select
+                      value={sendMinute}
+                      onChange={(e) => setSendMinute(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                    >
+                      {Array.from({ length: 60 / 5 }, (_, i) => String(i * 5).padStart(2, "0")).map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               <div className="mt-1 text-[11px] text-gray-500">Čas je v lokální časové zóně prohlížeče.</div>
             </div>
 
