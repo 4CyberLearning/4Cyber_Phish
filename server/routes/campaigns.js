@@ -436,30 +436,33 @@ async function sendCampaignEmails(campaignId, tenantId) {
   const now = new Date();
 
   let from;
-  let fromEmail;
   let replyTo;
+
+  // AUTH mailbox (jeden stabilní login účet)
+  const smtpUser = String(process.env.SMTP_USER || "").trim().toLowerCase();
+  if (!smtpUser) {
+    throw new Error("SMTP_USER is missing in env (auth mailbox).");
+  }
 
   if (campaign.senderIdentity) {
     const local = campaign.senderIdentity.localPart;
     const domain = campaign.senderIdentity.senderDomain?.domain;
-    const email = local && domain ? `${local}@${domain}` : null;
+    const fromEmail = local && domain ? `${local}@${domain}` : null;
 
-    if (email) {
-      fromEmail = String(email).trim().toLowerCase();
+    if (fromEmail) {
       const fromName = campaign.senderIdentity.fromName || fromEmail;
       from = `${fromName} <${fromEmail}>`;
     }
 
-    if (campaign.senderIdentity.replyTo) replyTo = campaign.senderIdentity.replyTo;
+    if (campaign.senderIdentity.replyTo) {
+      replyTo = campaign.senderIdentity.replyTo;
+    }
   }
 
-  if (!fromEmail) {
-    throw new Error("Sender identity is required (fromEmail is missing).");
+  if (!from) {
+    throw new Error("Sender identity is required (from address is missing).");
   }
 
-  // Auth uživatel pro SMTP (typicky 1 mailbox), FROM adresa se bere z identity
-  const smtpUser = SMTP_AUTH_USER || fromEmail;
-  
   for (const cu of campaign.targetUsers) {
     const userName = cu.user.fullName || cu.user.email;
     const landingUrl = buildLandingUrl(campaign, cu);
