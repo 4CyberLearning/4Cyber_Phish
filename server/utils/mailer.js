@@ -176,13 +176,14 @@ export async function sendMail({ smtpUser, to, subject, html, from, replyTo, pol
 
   try {
     const info = await transporter.sendMail({
-      from: finalFrom,
+      envelope: { from: smtpUser, to },   // <- SMTP MAIL FROM = auth mailbox
+      from,                               // <- viditelný From (alias)
+      sender: smtpUser,                   // <- pomáhá Exchange/Outlooku
       to,
       subject,
       html,
-      ...(replyTo ? { replyTo } : {}),
+      replyTo,
     });
-
     sentThisMinute += 1;
     sentToday += 1;
 
