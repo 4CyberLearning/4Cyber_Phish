@@ -427,7 +427,9 @@ async function sendCampaignEmails(campaignId, tenantId) {
       targetUsers: { include: { user: true } },
     },
   });
-
+  if (!campaign.targetUsers?.length) {
+    throw new Error("Campaign has no recipients (targetUsers is empty).");
+  }
   if (!campaign) throw new Error("Campaign not found");
   if (!campaign.emailTemplate) throw new Error("Campaign is missing emailTemplate");
   if (!campaign.landingPage) throw new Error("Campaign is missing landingPage");

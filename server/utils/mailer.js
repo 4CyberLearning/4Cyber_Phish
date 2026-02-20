@@ -149,7 +149,6 @@ export async function sendMail({ smtpUser, to, subject, html, from, replyTo, pol
 
   const effectivePolicy = policy || getPolicyFromEnv();
 
-  // v produkci vyžaduj allowlist, ale až při odesílání (ať může být z DB)
   if (
     isProd &&
     REQUIRE_ALLOWLIST_IN_PROD === "true" &&
@@ -172,21 +171,26 @@ export async function sendMail({ smtpUser, to, subject, html, from, replyTo, pol
   enforceRateLimits();
 
   const auth = await getSmtpAuthConfig({ smtpUser });
+  const effectiveSmtpUser = String(smtpUser || auth?.user || "").trim().toLowerCase();
+  if (!effectiveSmtpUser) {
+    throw new Error("Missing SMTP user (smtpUser or SMTP_USER env).");
+  }
+
   const transporter = createTransport(auth);
 
   try {
     const info = await transporter.sendMail({
-      envelope: { from: smtpUser, to },   // <- SMTP MAIL FROM = auth mailbox
-      from,                               // <- viditelný From (alias)
-      sender: smtpUser,                   // <- pomáhá Exchange/Outlooku
-      to,
+      envelope: { from: effectiveSmtpUser, to: recipients },
+      from: finalFrom,
+      sender: effectiveSmtpUser,
+      to: recipients,
       subject,
       html,
       replyTo,
     });
+
     sentThisMinute += 1;
     sentToday += 1;
-
     return info;
   } finally {
     transporter.close?.();

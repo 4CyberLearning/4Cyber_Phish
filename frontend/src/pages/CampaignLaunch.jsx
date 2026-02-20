@@ -125,7 +125,7 @@ export default function CampaignLaunch() {
   const okRecipients = recCount > 0;
   const okPreflight = preflightDone;
 
-  const canSend = okEmail && okLanding && okRecipients && okPreflight && !alreadySent;
+  const canSend = okEmail && okLanding && okSender && okRecipients && okPreflight && !alreadySent;
 
   async function handleSendNow() {
     if (!campaign?.id) return;
