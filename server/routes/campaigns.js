@@ -63,6 +63,9 @@ const APP_BASE =
   (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || process.env.TRACKING_BASE_URL || APP_BASE).replace(/\/$/, "");
+const SMTP_AUTH_USER = String(
+  process.env.SMTP_USER || process.env.SMTP_AUTH_USER || ""
+).trim().toLowerCase();
 
 function buildLandingUrl(campaign, campaignUser) {
   const slug = campaign?.landingPage?.urlSlug || String(campaign.landingPageId || "").trim();
@@ -425,38 +428,38 @@ async function sendCampaignEmails(campaignId, tenantId) {
     },
   });
 
-  if (!campaign) { throw new Error('Campaign not found');
-  if (!campaign.emailTemplate) throw new Error('Campaign is missing emailTemplate');
-  if (!campaign.landingPage) throw new Error('Campaign is missing landingPage');
-  if (!campaign.senderIdentity) throw new Error('Campaign is missing senderIdentity');
-  }
+  if (!campaign) throw new Error("Campaign not found");
+  if (!campaign.emailTemplate) throw new Error("Campaign is missing emailTemplate");
+  if (!campaign.landingPage) throw new Error("Campaign is missing landingPage");
+  if (!campaign.senderIdentity) throw new Error("Campaign is missing senderIdentity");
 
   const now = new Date();
 
   let from;
+  let fromEmail;
   let replyTo;
-  let smtpUser;
 
   if (campaign.senderIdentity) {
     const local = campaign.senderIdentity.localPart;
     const domain = campaign.senderIdentity.senderDomain?.domain;
-    const email = local && domain ? `${local}@${domain}` : undefined;
+    const email = local && domain ? `${local}@${domain}` : null;
 
     if (email) {
-      smtpUser = String(email).trim().toLowerCase();
-      const fromName = campaign.senderIdentity.fromName || smtpUser;
-      from = `${fromName} <${smtpUser}>`;
+      fromEmail = String(email).trim().toLowerCase();
+      const fromName = campaign.senderIdentity.fromName || fromEmail;
+      from = `${fromName} <${fromEmail}>`;
     }
 
-    if (campaign.senderIdentity.replyTo) {
-      replyTo = campaign.senderIdentity.replyTo;
-    }
+    if (campaign.senderIdentity.replyTo) replyTo = campaign.senderIdentity.replyTo;
   }
 
-  if (!smtpUser) {
-    throw new Error("Sender identity is required (smtpUser is missing).");
-  }  
+  if (!fromEmail) {
+    throw new Error("Sender identity is required (fromEmail is missing).");
+  }
 
+  // Auth uživatel pro SMTP (typicky 1 mailbox), FROM adresa se bere z identity
+  const smtpUser = SMTP_AUTH_USER || fromEmail;
+  
   for (const cu of campaign.targetUsers) {
     const userName = cu.user.fullName || cu.user.email;
     const landingUrl = buildLandingUrl(campaign, cu);

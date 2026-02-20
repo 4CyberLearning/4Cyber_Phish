@@ -212,9 +212,18 @@ router.delete("/sender-identities/:id", async (req, res) => {
       return res.status(404).json({ error: "Sender identity not found" });
     }
 
-    await prisma.senderIdentity.delete({ where: { id } });
+    const used = await prisma.campaign.count({
+      where: { senderIdentityId: id },
+    });
 
-    res.status(204).end();
+    if (used > 0) {
+      return res.status(409).json({
+        error: "Tuto identitu nelze smazat – je použitá v kampani. Nejdřív ji v kampaních odeber/změň.",
+      });
+    }
+
+    await prisma.senderIdentity.delete({ where: { id } });
+    return res.status(204).send();    
   } catch (err) {
     console.error("DELETE /api/sender-identities/:id error", err);
     res.status(500).json({
