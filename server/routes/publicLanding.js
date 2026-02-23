@@ -60,12 +60,9 @@ function escapeAttr(value = "") {
     .replace(/>/g, "&gt;");
 }
 
-function injectLandingTracking(html, { token, slug }) {
+function injectLandingScripts(html, { token, slug }) {
   const t = String(token || "").trim();
-  if (!t) return html;
-
   const safeSlug = escapeAttr(String(slug || ""));
-  const safeToken = escapeAttr(t);
 
   // HARDENING: <form> bez method / method="get" -> přepnout na POST
   html = html
@@ -78,9 +75,20 @@ function injectLandingTracking(html, { token, slug }) {
       '<form method="post"$1>'
     );
 
-  // CSP-safe: externí skript místo inline <script>...</script>
-  const scriptTag =
-    `<script src="/js/landing-tracking.js" defer data-token="${safeToken}" data-page="${safeSlug}"></script>`;
+  const scripts = [];
+
+  // tracking skript jen pokud máme token
+  if (t) {
+    const safeToken = escapeAttr(t);
+    scripts.push(
+      `<script src="/js/landing-tracking.js" defer data-token="${safeToken}" data-page="${safeSlug}"></script>`
+    );
+  }
+
+  // UI skript vždy – aby fungovalo přepínání kroků i v náhledu bez tokenu
+  scripts.push(`<script src="/js/landing-ui.js" defer></script>`);
+
+  const scriptTag = scripts.join("\n");
 
   if (/<\/body>/i.test(html)) {
     return html.replace(/<\/body>/i, `${scriptTag}</body>`);
@@ -109,7 +117,7 @@ router.get("/:slug", async (req, res) => {
     const token = String(req.query.t || req.query.token || "").trim();
     let html = rewriteUploadsToSameOrigin(page.html || "");
     html = wrapHtml(page.name, html);
-    html = injectLandingTracking(html, { token, slug });
+    html = injectLandingScripts(html, { token, slug });
 
     res.type("html").send(html);
   } catch (err) {

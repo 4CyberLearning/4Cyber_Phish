@@ -76,7 +76,7 @@
     appendTokenToLinks();
     document.querySelectorAll("form").forEach(ensureFormToken);
   }
-
+  
   // SUBMIT tracking (capture)
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
@@ -84,10 +84,9 @@
 
     ensureFormToken(form);
 
-    // NOVĚ: default submit NEblokujeme
-    var blockAttr = (form.getAttribute("data-block-submit") || "").toLowerCase();
+    // default submit NEblokujeme, jen pokud si to stránka explicitně řekne
+    var blockAttr = (form.getAttribute("data-lp-block-submit") || "").toLowerCase();
     var blockSubmit = (blockAttr === "1" || blockAttr === "true");
-
     if (blockSubmit) {
       ev.preventDefault();
       ev.stopPropagation();
