@@ -293,8 +293,21 @@ export default function LandingPagesPage() {
     });
   }
 
+  function normalizeLandingAssetUrl(url) {
+    try {
+      const u = new URL(String(url || ""), window.location.origin);
+      if (u.pathname.startsWith("/uploads/")) {
+        return `${u.pathname}${u.search}${u.hash}`;
+      }
+      return String(url || "");
+    } catch {
+      return String(url || "");
+    }
+  }
+
   function handlePickAsset(url) {
-    const snippet = `<img src="${url}" alt="" style="max-width:100%; height:auto;" />`;
+    const normalizedUrl = normalizeLandingAssetUrl(url);
+    const snippet = `<img src="${normalizedUrl}" alt="" style="max-width:100%; height:auto;" />`;
     insertIntoHtmlAtCursor(snippet);
   }
 
@@ -310,34 +323,6 @@ export default function LandingPagesPage() {
   function closePreview() {
     setPreviewState((p) => ({ ...p, open: false }));
   }
-
-  function escapeHtmlTitle(s) {
-    return String(s || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
-  }
-
-  function ensureHtmlDoc(html, title) {
-    const raw = String(html || "");
-    if (/<html[\s>]/i.test(raw)) return raw;
-    return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtmlTitle(
-      title || "Náhled"
-    )}</title></head><body>${raw}</body></html>`;
-  }
-
-  function openHtmlInNewTab(html, title) {
-    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
-    if (!w) {
-      setError("Prohlížeč zablokoval otevření nové karty. Povol pop-up pro tuto stránku.");
-      return;
-    }
-    w.document.open();
-    w.document.write(ensureHtmlDoc(html, title));
-    w.document.close();
-  }
-
   function openFormPreviewInNewTab() {
     openHtmlInNewTab(form.html || "", form?.name ? `Náhled: ${form.name}` : "Náhled landing page");
   }

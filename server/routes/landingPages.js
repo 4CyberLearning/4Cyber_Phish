@@ -24,6 +24,12 @@ async function getTenantId() {
   return tenant.id;
 }
 
+function rewriteUploadsToSameOrigin(html = "") {
+  return String(html)
+    // přepis libovolné absolutní URL na /uploads/... pokud vede na /uploads/
+    .replace(/https?:\/\/[^/"']+\/uploads\//gi, "/uploads/");
+}
+
 function normalizeLandingInput(body = {}) {
   const { name = "", urlSlug = "", html = "", tags = [] } = body;
 
@@ -51,7 +57,7 @@ function normalizeLandingInput(body = {}) {
   return {
     name: trimmedName,
     urlSlug: safeSlug,
-    html: html || "",
+    html: rewriteUploadsToSameOrigin(html || ""),
     tags: tagsArr,
   };
 }

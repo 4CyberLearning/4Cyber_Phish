@@ -3,9 +3,9 @@ import express from "express";
 import session from "express-session";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import path from "path";
-import { fileURLToPath } from "url";
 import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -28,7 +28,6 @@ import recipientDomainsRouter from "./routes/recipientDomains.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -39,9 +38,32 @@ if (process.env.TRUST_PROXY === "1") {
 // ---------- Security headers ----------
 app.use(
   helmet({
-    // zatím necháváme default; CSP případně doladíš později kvůli inline HTML
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'self'"],
+      },
+    },
   })
 );
+
+const landingCsp = helmet.contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+    "img-src": ["'self'", "data:"],       // obrázky přes /uploads/...
+    "script-src": ["'self'"],             // jen externí JS
+    "script-src-attr": ["'none'"],        // blok onclick/onsubmit
+    "connect-src": ["'self'"],            // tracking /t/s/*
+  },
+});
 
 // ---------- CORS ----------
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
@@ -108,20 +130,22 @@ function requireAuth(req, res, next) {
 
 // ---------- Statické soubory ----------
 app.use(express.static(path.join(__dirname, "public")));
+
 app.use(
   "/uploads",
   express.static(path.join(__dirname, "uploads"), {
     setHeaders(res) {
-      // aby šly obrázky načítat z jiného originu (jiný port, doména, email klient, atd.)
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     },
   })
 );
 
+app.use("/js", express.static(path.join(__dirname, "public/js")));
+
 // ---------- Public routy ----------
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 app.use("/t", trackingRouter);
-app.use("/lp", publicLandingRouter);
+app.use("/lp", landingCsp, publicLandingRouter);
 
 // rate-limit pro auth
 const authLimiter = rateLimit({

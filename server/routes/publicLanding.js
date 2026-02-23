@@ -46,15 +46,28 @@ function wrapHtml(name, html = "") {
   </html>`;
 }
 
+function rewriteUploadsToSameOrigin(html = "") {
+  return String(html)
+    // přepis libovolné absolutní URL na /uploads/... pokud vede na /uploads/
+    .replace(/https?:\/\/[^/"']+\/uploads\//gi, "/uploads/");
+}
+
+function escapeAttr(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function injectLandingTracking(html, { token, slug }) {
   const t = String(token || "").trim();
   if (!t) return html;
 
-  const safeSlug = String(slug || "").replace(/["<>]/g, "");
-  const safeToken = t.replace(/["<>]/g, "");
+  const safeSlug = escapeAttr(String(slug || ""));
+  const safeToken = escapeAttr(t);
 
-  // HARDENING: <form> bez method (nebo method="get") -> prohlížeč pošle GET a hodnoty skončí v URL (logy/historie).
-  // Přepneme všechny formuláře na POST (fallback i pro případ, že JS selže).
+  // HARDENING: <form> bez method / method="get" -> přepnout na POST
   html = html
     .replace(
       /<form([^>]*?)\bmethod\s*=\s*(["']?)\s*get\s*\2([^>]*)>/gi,
@@ -65,66 +78,15 @@ function injectLandingTracking(html, { token, slug }) {
       '<form method="post"$1>'
     );
 
+  // CSP-safe: externí skript místo inline <script>...</script>
+  const scriptTag =
+    `<script src="/js/landing-tracking.js" defer data-token="${safeToken}" data-page="${safeSlug}"></script>`;
 
-  const script = `
-<script>
-(function(){
-  var TOKEN = "${safeToken}";
-  var PAGE = "${safeSlug}";
-
-  function send(meta){
-    try {
-      var payload = JSON.stringify(meta);
-      var url = "/t/s/" + encodeURIComponent(TOKEN);
-      if (navigator.sendBeacon) {
-        var blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon(url, blob);
-        return;
-      }
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-        keepalive: true
-      }).catch(function(){});
-    } catch(e){}
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${scriptTag}</body>`);
   }
-
-  document.addEventListener("submit", function(ev){
-    var form = ev.target;
-    if (!form || !TOKEN) return;
-
-    var allow = (form.getAttribute("data-allow-submit") || "").toLowerCase();
-    var blockSubmit = !(allow === "1" || allow === "true");
-
-    if (blockSubmit) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-    }
-
-    send({ pageSlug: PAGE, submitted: true });
-
-    if (blockSubmit) {
-      try {
-        var btn = form.querySelector('button[type="submit"],input[type="submit"]');
-        if (btn) btn.disabled = true;
-
-        var note = document.createElement("div");
-        note.setAttribute("role","status");
-        note.style.cssText = "margin-top:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#111827;";
-        note.textContent = "Děkujeme. Ověření bylo přijato.";
-        form.appendChild(note);
-      } catch(e){}
-    }
-  }, true);
-})();
-</script>`.trim();
-
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${script}</body>`);
-  return `${html}\n${script}`;
+  return `${html}\n${scriptTag}`;
 }
-
 
 // GET /lp/:slug – veřejná landing page pro uživatele
 router.get("/:slug", async (req, res) => {
@@ -145,8 +107,8 @@ router.get("/:slug", async (req, res) => {
     }
 
     const token = String(req.query.t || req.query.token || "").trim();
-
-    let html = wrapHtml(page.name, page.html);
+    let html = rewriteUploadsToSameOrigin(page.html || "");
+    html = wrapHtml(page.name, html);
     html = injectLandingTracking(html, { token, slug });
 
     res.type("html").send(html);
