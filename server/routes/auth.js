@@ -9,21 +9,45 @@ const router = Router()
 // takže tady musí být jen "/login", ne "/auth/login"
 router.post("/login", async (req, res) => {
   const { email, password } = req.body || {}
-  if (!email || !password) return res.status(400).json({ error: "Email and password required" })
+  const isDev = process.env.NODE_ENV !== "production"
+
+  if (!email || !password) {
+    if (isDev) console.log("LOGIN FAIL: missing email/password", { email, hasPassword: !!password })
+    return res.status(400).json({ error: "Email and password required" })
+  }
 
   const tenant = await prisma.tenant.findUnique({ where: { slug: "demo" } })
-  if (!tenant) return res.status(500).json({ error: "Tenant not found" })
+  if (!tenant) {
+    console.error("LOGIN FAIL: tenant 'demo' not found")
+    return res.status(500).json({ error: "Tenant not found" })
+  }
 
   const user = await prisma.user.findFirst({ where: { email, tenantId: tenant.id } })
-  if (!user) return res.status(401).json({ error: "Invalid credentials" })
-  if (!user.isAdmin) return res.status(403).json({ error: "Forbidden" })
-  if (!user.passwordHash) return res.status(401).json({ error: "Invalid credentials" })
+  if (!user) {
+    if (isDev) console.log("LOGIN FAIL: user not found", { email, tenantId: tenant.id })
+    return res.status(401).json({ error: isDev ? "User not found" : "Invalid credentials" })
+  }
+
+  if (!user.isAdmin) {
+    if (isDev) console.log("LOGIN FAIL: user not admin", { userId: user.id, email: user.email })
+    return res.status(403).json({ error: isDev ? "User is not admin" : "Forbidden" })
+  }
+
+  if (!user.passwordHash) {
+    if (isDev) console.log("LOGIN FAIL: missing passwordHash", { userId: user.id, email: user.email })
+    return res.status(401).json({ error: isDev ? "No password set" : "Invalid credentials" })
+  }
 
   const ok = await bcrypt.compare(password, user.passwordHash)
-  if (!ok) return res.status(401).json({ error: "Invalid credentials" })
+  if (!ok) {
+    if (isDev) console.log("LOGIN FAIL: wrong password", { userId: user.id, email: user.email })
+    return res.status(401).json({ error: isDev ? "Wrong password" : "Invalid credentials" })
+  }
 
   req.session.userId = user.id
   req.session.tenantId = tenant.id
+
+  if (isDev) console.log("LOGIN OK", { userId: user.id, email: user.email })
 
   return res.json({
     user: { id: user.id, email: user.email, fullName: user.fullName, isAdmin: user.isAdmin },
