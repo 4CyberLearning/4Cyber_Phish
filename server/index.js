@@ -164,6 +164,10 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// ✅ public healthcheck for integrations (no session required)
+app.get("/api/test", (req, res) => {
+  res.json({ ok: true, service: "4CyberPhish", ts: new Date().toISOString() });
+});
 app.use("/api", requireAuth, apiLimiter);
 app.use("/api/templates", templatesRouter);
 app.use("/api/assets", assetsRouter);

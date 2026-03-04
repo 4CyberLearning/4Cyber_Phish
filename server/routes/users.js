@@ -180,6 +180,9 @@ router.put("/users/:id", async (req, res) => {
 /**
  * DELETE /api/users/:id
  */
+/**
+ * DELETE /api/users/:id
+ */
 router.delete("/users/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -193,6 +196,11 @@ router.delete("/users/:id", async (req, res) => {
     });
     if (!existing) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    // zabránit smazání admin účtů
+    if (existing.isAdmin) {
+      return res.status(400).json({ error: "Admin user cannot be deleted" });
     }
 
     await prisma.user.delete({ where: { id } });
