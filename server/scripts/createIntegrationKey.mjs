@@ -1,4 +1,4 @@
-import prisma from "../prismaClient.js";
+import prisma from "../db/prisma.js";
 import { makeIntegrationToken } from "../utils/integrationKey.js";
 
 const tenantSlug = process.argv[2];

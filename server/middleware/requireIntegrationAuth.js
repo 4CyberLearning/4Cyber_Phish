@@ -1,4 +1,4 @@
-import prisma from "../prismaClient.js";
+import prisma from "../db/prisma.js";
 import { sha256Base64url } from "../utils/integrationKey.js";
 
 export default async function requireIntegrationAuth(req, res, next) {
