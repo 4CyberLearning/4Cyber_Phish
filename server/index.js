@@ -27,6 +27,7 @@ import publicLandingRouter from "./routes/publicLanding.js";
 import recipientDomainsRouter from "./routes/recipientDomains.js";
 import requireIntegrationAuth from "./middleware/requireIntegrationAuth.js";
 import reportsRouter from "./routes/reports.js";
+import integrationRouter from "./routes/integration.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -167,6 +168,7 @@ const apiLimiter = rateLimit({
 });
 
 // ✅ Public integration healthcheck (NO session)
+app.use("/api/integration", requireIntegrationAuth, integrationRouter);
 app.get("/api/test", (req, res) => {
   res.json({ ok: true, service: "4CyberPhish", ts: new Date().toISOString() });
 });
@@ -187,6 +189,7 @@ app.use("/api/debug", debugRouter);
 app.use("/api", recipientsRouter);
 app.use("/api/landing-pages", landingPagesRouter);
 app.use("/api", recipientDomainsRouter);
+
 // ---------- Error handler ----------
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);

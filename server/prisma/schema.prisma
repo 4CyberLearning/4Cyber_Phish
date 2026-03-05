@@ -95,6 +95,7 @@ model User {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+
   email        String
   passwordHash String?
   firstName    String?
@@ -106,6 +107,8 @@ model User {
   isAdmin      Boolean  @default(false)
   riskScore    Float    @default(0.0)
   createdAt    DateTime @default(now())
+  isActive     Boolean @default(true)
+  externalUserPublicId String?
 
   // relations
   groupLinks    GroupMember[]
@@ -114,7 +117,10 @@ model User {
   campaignLinks CampaignUser[]
   auditLogs     AuditLog[]
 
-  @@unique([tenantId, email])  
+  @@unique([tenantId, email])
+  @@index([externalUserPublicId])
+  @@index([tenantId, isActive])
+  @@unique([tenantId, externalUserPublicId])  
 }
 
 model Group {
