@@ -54,6 +54,8 @@ model Tenant {
   senderIdentities        SenderIdentity[]
   senderDomains           SenderDomain[]
   allowedRecipientDomains AllowedRecipientDomain[]
+
+  integrationClients      IntegrationClient[]   // <-- PŘIDAT
 }
 
 model SenderDomain {
@@ -93,7 +95,7 @@ model User {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  email        String   @unique
+  email        String
   passwordHash String?
   firstName    String?
   lastName     String?
@@ -111,6 +113,8 @@ model User {
   trainings     UserTraining[]
   campaignLinks CampaignUser[]
   auditLogs     AuditLog[]
+
+  @@unique([tenantId, email])  
 }
 
 model Group {
@@ -241,12 +245,32 @@ model CampaignUser {
   clickedAt   DateTime?
   submittedAt DateTime?
   reportedAt  DateTime?
+  externalUserPublicId String?
 
   campaign     Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions Interaction[]
 
   @@unique([campaignId, userId])
+  @@index([externalUserPublicId])
+}
+
+model IntegrationClient {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  name      String
+
+  // keyId.secret je token, do DB ukládáme jen hash
+  keyId     String   @unique
+  keyHash   String   @unique
+
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  lastUsedAt DateTime?
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 model Interaction {

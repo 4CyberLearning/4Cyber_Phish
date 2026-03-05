@@ -25,6 +25,8 @@ import senderDomainsRouter from "./routes/senderDomains.js";
 import campaignReportsRouter from "./routes/campaignReports.js";
 import publicLandingRouter from "./routes/publicLanding.js";
 import recipientDomainsRouter from "./routes/recipientDomains.js";
+import requireIntegrationAuth from "./middleware/requireIntegrationAuth.js";
+import reportsRouter from "./routes/reports.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -159,16 +161,22 @@ app.use("/api/auth", authLimiter, authRouter);
 // ---------- Protected API (rate-limit + auth) ----------
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600, // 600 požadavků / 15 min / IP (jen pro přihlášené)
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// ✅ public healthcheck for integrations (no session required)
+// ✅ Public integration healthcheck (NO session)
 app.get("/api/test", (req, res) => {
   res.json({ ok: true, service: "4CyberPhish", ts: new Date().toISOString() });
 });
+
+// ✅ Integration reports (Bearer token) – MUST be before session-protected /api
+app.use("/api/reports", requireIntegrationAuth, reportsRouter);
+
+// ✅ Session-protected API for phish admin UI
 app.use("/api", requireAuth, apiLimiter);
+
 app.use("/api/templates", templatesRouter);
 app.use("/api/assets", assetsRouter);
 app.use("/api", senderDomainsRouter);
@@ -179,7 +187,6 @@ app.use("/api/debug", debugRouter);
 app.use("/api", recipientsRouter);
 app.use("/api/landing-pages", landingPagesRouter);
 app.use("/api", recipientDomainsRouter);
-
 // ---------- Error handler ----------
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
