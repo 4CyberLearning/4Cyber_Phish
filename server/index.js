@@ -28,6 +28,7 @@ import recipientDomainsRouter from "./routes/recipientDomains.js";
 import requireIntegrationAuth from "./middleware/requireIntegrationAuth.js";
 import reportsRouter from "./routes/reports.js";
 import integrationRouter from "./routes/integration.js";
+import packagesRouter from "./routes/packages.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -189,6 +190,7 @@ app.use("/api/debug", debugRouter);
 app.use("/api", recipientsRouter);
 app.use("/api/landing-pages", landingPagesRouter);
 app.use("/api", recipientDomainsRouter);
+app.use("/api/packages", packagesRouter);
 
 // ---------- Error handler ----------
 app.use((err, _req, res, _next) => {

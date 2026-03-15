@@ -86,4 +86,357 @@ router.put("/recipients", async (req, res) => {
   });
 });
 
+function serializeGroup(group) {
+  return {
+    id: group.id,
+    name: group.name,
+    description: group.description || "",
+    memberCount: Number(group._count?.members || group.members?.length || 0),
+    memberUserPublicIds: (group.members || [])
+      .map((member) => member?.user?.externalUserPublicId || null)
+      .filter(Boolean),
+    createdAt: group.createdAt,
+    updatedAt: group.updatedAt,
+  };
+}
+
+router.get("/groups", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const groups = await prisma.group.findMany({
+      where: { tenantId },
+      orderBy: { name: "asc" },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          select: { user: { select: { externalUserPublicId: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    });
+
+    res.json({ items: groups.map(serializeGroup) });
+  } catch (err) {
+    console.error("GET /api/integration/groups error", err);
+    res.status(500).json({ error: err?.message || "Failed to load groups" });
+  }
+});
+
+router.post("/groups", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").trim();
+
+    if (!name) return res.status(400).json({ error: "Group name is required" });
+
+    const created = await prisma.group.create({
+      data: {
+        tenantId,
+        name,
+        description: description || null,
+      },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          select: { user: { select: { externalUserPublicId: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    });
+
+    res.status(201).json(serializeGroup(created));
+  } catch (err) {
+    console.error("POST /api/integration/groups error", err);
+    res.status(500).json({ error: err?.message || "Failed to create group" });
+  }
+});
+
+router.put("/groups/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").trim();
+
+    if (!name) return res.status(400).json({ error: "Group name is required" });
+
+    const existing = await prisma.group.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Group not found" });
+
+    const updated = await prisma.group.update({
+      where: { id },
+      data: {
+        name,
+        description: description || null,
+      },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          select: { user: { select: { externalUserPublicId: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    });
+
+    res.json(serializeGroup(updated));
+  } catch (err) {
+    console.error("PUT /api/integration/groups/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to update group" });
+  }
+});
+
+router.delete("/groups/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const existing = await prisma.group.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Group not found" });
+
+    await prisma.groupMember.deleteMany({ where: { groupId: id } });
+    await prisma.group.delete({ where: { id } });
+
+    res.status(204).send();
+  } catch (err) {
+    console.error("DELETE /api/integration/groups/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to delete group" });
+  }
+});
+
+router.post("/groups/:id/members", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const groupId = Number(req.params.id);
+    const userPublicId = String(req.body?.userPublicId || "").trim();
+
+    if (!Number.isInteger(groupId) || !userPublicId) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+
+    const [group, user] = await Promise.all([
+      prisma.group.findFirst({
+        where: { id: groupId, tenantId },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({
+        where: { tenantId, externalUserPublicId: userPublicId },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await prisma.groupMember.upsert({
+      where: { userId_groupId: { userId: user.id, groupId } },
+      update: {},
+      create: { userId: user.id, groupId },
+    });
+
+    const updated = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          select: { user: { select: { externalUserPublicId: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    });
+
+    res.json(serializeGroup(updated));
+  } catch (err) {
+    console.error("POST /api/integration/groups/:id/members error", err);
+    res.status(500).json({ error: err?.message || "Failed to add member" });
+  }
+});
+
+router.delete("/groups/:id/members/:userPublicId", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const groupId = Number(req.params.id);
+    const userPublicId = String(req.params.userPublicId || "").trim();
+
+    if (!Number.isInteger(groupId) || !userPublicId) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+
+    const [group, user] = await Promise.all([
+      prisma.group.findFirst({
+        where: { id: groupId, tenantId },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({
+        where: { tenantId, externalUserPublicId: userPublicId },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await prisma.groupMember.deleteMany({
+      where: { groupId, userId: user.id },
+    });
+
+    const updated = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          select: { user: { select: { externalUserPublicId: true } } },
+          orderBy: { joinedAt: "asc" },
+        },
+      },
+    });
+
+    res.json(serializeGroup(updated));
+  } catch (err) {
+    console.error("DELETE /api/integration/groups/:id/members/:userPublicId error", err);
+    res.status(500).json({ error: err?.message || "Failed to remove member" });
+  }
+});
+
+function serializePackageForIntegration(row) {
+  const senderDomain = row?.senderIdentity?.senderDomain?.domain || "";
+  const senderEmail =
+    row?.senderIdentity?.localPart && senderDomain
+      ? `${row.senderIdentity.localPart}@${senderDomain}`
+      : "";
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    category: row.category || "",
+    difficulty: row.difficulty ?? 1,
+    previewText: row.previewText || "",
+    isActive: row.isActive,
+    isApproved: row.isApproved,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    emailTemplate: row.emailTemplate
+      ? {
+          id: row.emailTemplate.id,
+          name: row.emailTemplate.name,
+          subject: row.emailTemplate.subject,
+        }
+      : null,
+    landingPage: row.landingPage
+      ? {
+          id: row.landingPage.id,
+          name: row.landingPage.name,
+          urlSlug: row.landingPage.urlSlug,
+        }
+      : null,
+    senderIdentity: row.senderIdentity
+      ? {
+          id: row.senderIdentity.id,
+          name: row.senderIdentity.name,
+          fromName: row.senderIdentity.fromName,
+          email: senderEmail,
+        }
+      : null,
+  };
+}
+
+router.get("/packages", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const rows = await prisma.campaignPackage.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        isApproved: true,
+      },
+      orderBy: [{ difficulty: "asc" }, { name: "asc" }],
+      include: {
+        emailTemplate: { select: { id: true, name: true, subject: true } },
+        landingPage: { select: { id: true, name: true, urlSlug: true } },
+        senderIdentity: {
+          select: {
+            id: true,
+            name: true,
+            fromName: true,
+            localPart: true,
+            senderDomain: { select: { domain: true } },
+          },
+        },
+      },
+    });
+
+    res.json({ items: rows.map(serializePackageForIntegration) });
+  } catch (err) {
+    console.error("GET /api/integration/packages error", err);
+    res.status(500).json({ error: err?.message || "Failed to load packages" });
+  }
+});
+
+router.get("/packages/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+
+    const row = await prisma.campaignPackage.findFirst({
+      where: {
+        id,
+        tenantId,
+        isActive: true,
+        isApproved: true,
+      },
+      include: {
+        emailTemplate: { select: { id: true, name: true, subject: true } },
+        landingPage: { select: { id: true, name: true, urlSlug: true } },
+        senderIdentity: {
+          select: {
+            id: true,
+            name: true,
+            fromName: true,
+            localPart: true,
+            senderDomain: { select: { domain: true } },
+          },
+        },
+      },
+    });
+
+    if (!row) {
+      return res.status(404).json({ error: "Package not found" });
+    }
+
+    res.json(serializePackageForIntegration(row));
+  } catch (err) {
+    console.error("GET /api/integration/packages/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to load package" });
+  }
+});
+
 export default router;

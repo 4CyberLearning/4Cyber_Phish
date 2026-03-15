@@ -359,10 +359,14 @@ router.post("/users", async (req, res) => {
 
     // email je @unique globálně => hledej přes findUnique(email)
     const existing = await prisma.user.findUnique({
-      where: { email },
+      where: {
+        tenantId_email: {
+          tenantId,
+          email,
+        },
+      },
       select: { id: true, tenantId: true },
     });
-
     let userId;
 
     if (!existing) {
@@ -448,7 +452,12 @@ router.post("/users/import", async (req, res) => {
         // Pozor: v aktuálním schema.prisma je email @unique globálně.
         // Tady to držíme jednoduše pro demo tenant.
         const existing = await tx.user.findUnique({
-          where: { email },
+          where: {
+            tenantId_email: {
+              tenantId,
+              email,
+            },
+          },
           select: { id: true, tenantId: true },
         });
 

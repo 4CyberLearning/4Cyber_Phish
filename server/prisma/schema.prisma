@@ -46,6 +46,7 @@ model Tenant {
   users                   User[]
   groups                  Group[]
   campaigns               Campaign[]
+  packages                CampaignPackage[]
   templates               EmailTemplate[]
   landingPages            LandingPage[]
   trainings               TrainingModule[]
@@ -55,7 +56,7 @@ model Tenant {
   senderDomains           SenderDomain[]
   allowedRecipientDomains AllowedRecipientDomain[]
 
-  integrationClients      IntegrationClient[]   // <-- PŘIDAT
+  integrationClients      IntegrationClient[]
 }
 
 model SenderDomain {
@@ -124,13 +125,16 @@ model User {
 }
 
 model Group {
-  id       Int    @id @default(autoincrement())
-  tenantId Int
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name     String
+  id          Int       @id @default(autoincrement())
+  tenantId    Int
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   members    GroupMember[]
-  targetedBy Campaign[]    @relation("CampaignTargetGroup")
+  targetedBy Campaign[] @relation("CampaignTargetGroup")
 
   @@unique([tenantId, name])
 }
@@ -165,6 +169,7 @@ model EmailTemplate {
 
   // back-relations
   campaigns Campaign[]
+  packages  CampaignPackage[] @relation("PackageEmailTemplate")
 
   @@unique([tenantId, name])
 }
@@ -186,6 +191,7 @@ model SenderIdentity {
   senderDomain   SenderDomain @relation(fields: [senderDomainId], references: [id], onDelete: Cascade)
 
   campaigns Campaign[] @relation("CampaignSenderIdentity")
+  packages  CampaignPackage[] @relation("PackageSenderIdentity")
 
   @@unique([tenantId, name])
   @@unique([tenantId, senderDomainId, localPart])
@@ -204,11 +210,43 @@ model LandingPage {
 
   // back-relations
   campaigns Campaign[]
+  packages  CampaignPackage[] @relation("PackageLandingPage")
 }
 
 /**
  * ========= CAMPAIGNS & TRACKING =========
  */
+
+model CampaignPackage {
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  category    String?
+  difficulty  Int      @default(1)
+  previewText String?
+  isActive    Boolean  @default(true)
+  isApproved  Boolean  @default(false)
+
+  emailTemplateId Int
+  emailTemplate   EmailTemplate @relation("PackageEmailTemplate", fields: [emailTemplateId], references: [id], onDelete: Restrict)
+
+  landingPageId Int
+  landingPage   LandingPage @relation("PackageLandingPage", fields: [landingPageId], references: [id], onDelete: Restrict)
+
+  senderIdentityId Int
+  senderIdentity   SenderIdentity @relation("PackageSenderIdentity", fields: [senderIdentityId], references: [id], onDelete: Restrict)
+
+  campaigns Campaign[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive, isApproved])
+}
 
 model Campaign {
   id       Int    @id @default(autoincrement())
@@ -219,6 +257,9 @@ model Campaign {
   description String?
   scheduledAt DateTime
   status      CampaignStatus @default(SCHEDULED)
+
+  packageId Int?
+  package   CampaignPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
 
   emailTemplateId Int?
   emailTemplate   EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: Restrict)

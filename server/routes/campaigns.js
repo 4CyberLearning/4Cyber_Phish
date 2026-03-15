@@ -59,6 +59,70 @@ async function getTenantId() {
   return tenant.id;
 }
 
+async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, landingPageId, senderIdentityId }) {
+  const checks = [];
+
+  if (emailTemplateId != null) {
+    checks.push(
+      prisma.emailTemplate.findFirst({
+        where: { id: emailTemplateId, tenantId },
+        select: { id: true },
+      })
+    );
+  } else {
+    checks.push(Promise.resolve(true));
+  }
+
+  if (landingPageId != null) {
+    checks.push(
+      prisma.landingPage.findFirst({
+        where: { id: landingPageId, tenantId },
+        select: { id: true },
+      })
+    );
+  } else {
+    checks.push(Promise.resolve(true));
+  }
+
+  if (senderIdentityId != null) {
+    checks.push(
+      prisma.senderIdentity.findFirst({
+        where: { id: senderIdentityId, tenantId },
+        select: { id: true },
+      })
+    );
+  } else {
+    checks.push(Promise.resolve(true));
+  }
+
+  const [template, landingPage, senderIdentity] = await Promise.all(checks);
+
+  if (emailTemplateId != null && !template) throw new Error("Email template not found");
+  if (landingPageId != null && !landingPage) throw new Error("Landing page not found");
+  if (senderIdentityId != null && !senderIdentity) throw new Error("Sender identity not found");
+}
+
+async function resolvePackageCampaignRefs(tenantId, packageId) {
+  const pkg = await prisma.campaignPackage.findFirst({
+    where: { id: packageId, tenantId },
+    select: {
+      id: true,
+      emailTemplateId: true,
+      landingPageId: true,
+      senderIdentityId: true,
+    },
+  });
+
+  if (!pkg) throw new Error("Package not found");
+
+  return {
+    packageId: pkg.id,
+    emailTemplateId: pkg.emailTemplateId,
+    landingPageId: pkg.landingPageId,
+    senderIdentityId: pkg.senderIdentityId,
+  };
+}
+
 const APP_BASE =
   (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
 
@@ -82,6 +146,7 @@ router.get('/campaigns', async (_req, res) => {
     const rows = await prisma.campaign.findMany({
       where: { tenantId },
       include: {
+        package: true,
         emailTemplate: true,
         landingPage: true,
         senderIdentity: {
@@ -111,6 +176,7 @@ router.get('/campaigns/:id', async (req, res) => {
     const row = await prisma.campaign.findFirst({
       where: { id, tenantId },
       include: {
+        package: true,
         emailTemplate: true,
         landingPage: true,
         senderIdentity: {
@@ -241,39 +307,70 @@ router.patch("/campaigns/:id", async (req, res) => {
       if (d) data.scheduledAt = d;
     }
 
-    if (body.landingPageId !== undefined) {
-      const v = Number(body.landingPageId);
-      if (!Number.isInteger(v)) {
-        return res.status(400).json({ error: "Invalid landingPageId" });
-      }
-      data.landingPageId = v;
-    }
-
-    if (body.emailTemplateId !== undefined) {
-      const v = Number(body.emailTemplateId);
-      if (!Number.isInteger(v)) {
-        return res.status(400).json({ error: "Invalid emailTemplateId" });
-      }
-      data.emailTemplateId = v;
-    }
-
-    if (body.senderIdentityId !== undefined) {
-      if (body.senderIdentityId === null || body.senderIdentityId === "") {
-        data.senderIdentityId = null;
+    if (body.packageId !== undefined) {
+      if (body.packageId === null || body.packageId === "") {
+        data.packageId = null;
       } else {
-        const v = Number(body.senderIdentityId);
-        if (!Number.isInteger(v)) {
-          return res.status(400).json({ error: "Invalid senderIdentityId" });
+        const packageId = Number(body.packageId);
+        if (!Number.isInteger(packageId)) {
+          return res.status(400).json({ error: "Invalid packageId" });
         }
-        data.senderIdentityId = v;
+
+        const packageRefs = await resolvePackageCampaignRefs(tenantId, packageId);
+        data.packageId = packageRefs.packageId;
+        data.emailTemplateId = packageRefs.emailTemplateId;
+        data.landingPageId = packageRefs.landingPageId;
+        data.senderIdentityId = packageRefs.senderIdentityId;
       }
+    } else {
+      let tplId;
+      let lpId;
+      let sidId;
+
+      if (body.landingPageId !== undefined) {
+        const v = Number(body.landingPageId);
+        if (!Number.isInteger(v)) {
+          return res.status(400).json({ error: "Invalid landingPageId" });
+        }
+        lpId = v;
+        data.landingPageId = v;
+      }
+
+      if (body.emailTemplateId !== undefined) {
+        const v = Number(body.emailTemplateId);
+        if (!Number.isInteger(v)) {
+          return res.status(400).json({ error: "Invalid emailTemplateId" });
+        }
+        tplId = v;
+        data.emailTemplateId = v;
+      }
+
+      if (body.senderIdentityId !== undefined) {
+        if (body.senderIdentityId === null || body.senderIdentityId === "") {
+          sidId = null;
+          data.senderIdentityId = null;
+        } else {
+          const v = Number(body.senderIdentityId);
+          if (!Number.isInteger(v)) {
+            return res.status(400).json({ error: "Invalid senderIdentityId" });
+          }
+          sidId = v;
+          data.senderIdentityId = v;
+        }
+      }
+
+      await assertCampaignRefsBelongToTenant(tenantId, {
+        emailTemplateId: tplId,
+        landingPageId: lpId,
+        senderIdentityId: sidId,
+      });
     }
 
-    // volitelné: přepsání příjemců (krok 4)
     if (body.userIds !== undefined) {
       if (!Array.isArray(body.userIds)) {
         return res.status(400).json({ error: "userIds must be an array" });
       }
+
       const userIds = body.userIds
         .map((x) => Number(x))
         .filter((x) => Number.isInteger(x) && x > 0);
@@ -284,11 +381,11 @@ router.patch("/campaigns/:id", async (req, res) => {
       };
     }
 
-    // když není co měnit, vrať detail
     if (Object.keys(data).length === 0) {
       const row = await prisma.campaign.findFirst({
         where: { id, tenantId },
         include: {
+          package: true,
           emailTemplate: true,
           landingPage: true,
           senderIdentity: { include: { senderDomain: true } },
@@ -307,6 +404,7 @@ router.patch("/campaigns/:id", async (req, res) => {
     const row = await prisma.campaign.findFirst({
       where: { id, tenantId },
       include: {
+        package: true,
         emailTemplate: true,
         landingPage: true,
         senderIdentity: { include: { senderDomain: true } },
@@ -328,6 +426,7 @@ router.post("/campaigns", async (req, res) => {
     name,
     description,
     scheduledAt,
+    packageId,
     emailTemplateId,
     landingPageId,
     senderIdentityId,
@@ -339,18 +438,15 @@ router.post("/campaigns", async (req, res) => {
     return res.status(400).json({ error: "Name is required" });
   }
 
-  // userIds je volitelné, ale když je poslané, musí to být array
   if (userIds !== undefined && !Array.isArray(userIds)) {
     return res.status(400).json({ error: "userIds must be an array" });
   }
 
-  // scheduledAt volitelné, validace
   const sched = scheduledAt ? new Date(scheduledAt) : new Date();
   if (sched && Number.isNaN(sched.getTime())) {
     return res.status(400).json({ error: "Invalid scheduledAt" });
   }
 
-  // optional ids: když jsou poslané, musí být integer
   const parseOptionalInt = (v, key) => {
     if (v === undefined || v === null || v === "") return null;
     const num = Number(v);
@@ -361,16 +457,36 @@ router.post("/campaigns", async (req, res) => {
   try {
     const tenantId = await getTenantId();
 
+    let resolvedPackageId = null;
     let tplId = null;
     let lpId = null;
     let sidId = null;
 
-    try {
-      tplId = parseOptionalInt(emailTemplateId, "emailTemplateId");
-      lpId = parseOptionalInt(landingPageId, "landingPageId");
-      sidId = parseOptionalInt(senderIdentityId, "senderIdentityId");
-    } catch (e) {
-      return res.status(400).json({ error: e.message });
+    if (packageId !== undefined && packageId !== null && packageId !== "") {
+      const parsedPackageId = Number(packageId);
+      if (!Number.isInteger(parsedPackageId)) {
+        return res.status(400).json({ error: "Invalid packageId" });
+      }
+
+      const packageRefs = await resolvePackageCampaignRefs(tenantId, parsedPackageId);
+      resolvedPackageId = packageRefs.packageId;
+      tplId = packageRefs.emailTemplateId;
+      lpId = packageRefs.landingPageId;
+      sidId = packageRefs.senderIdentityId;
+    } else {
+      try {
+        tplId = parseOptionalInt(emailTemplateId, "emailTemplateId");
+        lpId = parseOptionalInt(landingPageId, "landingPageId");
+        sidId = parseOptionalInt(senderIdentityId, "senderIdentityId");
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+
+      await assertCampaignRefsBelongToTenant(tenantId, {
+        emailTemplateId: tplId,
+        landingPageId: lpId,
+        senderIdentityId: sidId,
+      });
     }
 
     const data = {
@@ -379,6 +495,7 @@ router.post("/campaigns", async (req, res) => {
       description: String(description || "").trim() || null,
       scheduledAt: sched,
       status: CampaignStatus.SCHEDULED,
+      packageId: resolvedPackageId,
       emailTemplateId: tplId,
       landingPageId: lpId,
       senderIdentityId: sidId,
@@ -399,6 +516,7 @@ router.post("/campaigns", async (req, res) => {
     const created = await prisma.campaign.create({
       data,
       include: {
+        package: true,
         emailTemplate: true,
         landingPage: true,
         senderIdentity: { include: { senderDomain: true } },
