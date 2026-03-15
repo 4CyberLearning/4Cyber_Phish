@@ -18,6 +18,7 @@ const WIDTH_BY_PATH = [
   { test: (p) => p.startsWith("/content/email-templates"), w: "1500px" },
   { test: (p) => p.startsWith("/content/sender-identities"), w: "1400px" },
   { test: (p) => p.startsWith("/content/assets"), w: "1200px" },
+  { test: (p) => p.startsWith("/content/packages"), w: "1600px" },
 
   { test: (p) => p.startsWith("/campaigns/new"), w: "1100px" },
   { test: (p) => p.startsWith("/campaigns/"), w: "1400px" }, // detail

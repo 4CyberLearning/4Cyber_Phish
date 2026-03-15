@@ -6,7 +6,6 @@
     "loading": "Načítám…",
     "cancel": "Zrušit"
   },
-
   "playbook": {
     "title": "Playbook: phishing simulace A–Z",
     "intro": "Tento playbook popisuje autorizovanou simulaci pro trénink povědomí a test procesů. Vždy dodržujte zákony, interní směrnice a souhlas organizace.",
@@ -103,35 +102,31 @@
       }
     ]
   },
-
   "nav": {
     "dashboard": "Dashboard",
     "playbook": {
       "title": "Návod"
     },
-
     "content": {
       "title": "Obsah",
       "emailTemplates": "E-mailové šablony",
       "landingPages": "Landing pages",
       "assets": "Assety / soubory",
-      "senderIdentities": "domény a odesílatelé"
+      "senderIdentities": "domény a odesílatelé",
+      "packages": "Balíčky"
     },
-
     "campaign": {
       "title": "Kampaně",
       "new": "Nová kampaň",
       "list": "Seznam kampaní",
       "aftercare": "Následná opatření"
     },
-
     "recipients": {
       "title": "Příjemci",
       "upload": "Import / nahrání",
       "groups": "Skupiny",
       "rules": "Pravidla segmentace"
     },
-
     "reports": {
       "title": "Reporty",
       "overview": "Přehled",
@@ -139,13 +134,11 @@
       "security": "Bezpečnost",
       "audit": "Audit"
     },
-
     "automation": {
       "title": "Automatizace",
       "rules": "Pravidla",
       "tasks": "Úlohy"
     },
-
     "settings": {
       "title": "Nastavení",
       "general": "Obecné",
@@ -154,7 +147,6 @@
       "users": "Uživatelé"
     }
   },
-
   "content": {
     "emailTemplates": {
       "title": "E-mailové šablony",
@@ -200,26 +192,22 @@
     },
     "recipients": {
       "title": "Příjemci kampaní",
-
       "actions": {
         "importCsv": "Import CSV",
         "newGroup": "Nová skupina",
         "newUser": "Nový příjemce",
         "save": "Uložit"
       },
-
       "groups": {
         "title": "Skupiny",
         "all": "Všichni příjemci",
         "ungrouped": "Bez skupiny",
         "empty": "Zatím nemáte žádné skupiny."
       },
-
       "users": {
         "title": "Příjemci (uživatelé)",
         "empty": "Zatím nemáte žádné příjemce."
       },
-
       "messages": {
         "emailRequired": "E-mail je povinný.",
         "saved": "Příjemce uložen.",
@@ -296,7 +284,7 @@
           "empty": "Zatím žádný obsah k zobrazení."
         }
       }
-    }    
+    }
   },
   "senderIdentities": {
     "title": "Odesílatelé a domény"

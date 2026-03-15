@@ -12,6 +12,7 @@ import Playbook from "./pages/Playbook";
 import EmailTemplatesPage from "./pages/Content/EmailTemplates";
 import LandingPagesPage from "./pages/Content/LandingPages";
 import SenderIdentitiesPage from "./pages/Content/SenderIdentities";
+import PackagesPage from "./pages/Content/Packages";
 import CampaignCreate from "./pages/CampaignCreate";
 import CampaignDetail from "./pages/CampaignDetail";
 import CampaignPreflight from "./pages/CampaignPreflight";
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="/content/email-templates" element={<EmailTemplatesPage />} />
           <Route path="/content/landing-pages" element={<LandingPagesPage />} />
           <Route path="/content/sender-identities" element={<SenderIdentitiesPage />} />
+          <Route path="/content/packages" element={<PackagesPage />} />
           <Route path="/content/assets" element={<AssetsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           <Route path="/reports" element={<Navigate to="/reports/overview" replace />} />

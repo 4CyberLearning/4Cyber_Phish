@@ -31,6 +31,10 @@ export const nav = [
         to: "/content/sender-identities",
       },
       {
+        key: "nav.content.packages",          // Balíčky
+        to: "/content/packages",
+      },
+      {
         key: "nav.content.assets",            // Assety / soubory
         to: "/content/assets",
       },
