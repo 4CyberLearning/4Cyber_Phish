@@ -1,11 +1,59 @@
-// server/routes/integration.js
 import express from "express";
 import prisma from "../db/prisma.js";
 
 const router = express.Router();
 
+function serializeGroup(group) {
+  return {
+    id: group.id,
+    name: group.name,
+    description: group.description || "",
+    memberCount: Number(group._count?.members || group.members?.length || 0),
+    memberUserPublicIds: (group.members || [])
+      .map((member) => member?.user?.externalUserPublicId || null)
+      .filter(Boolean),
+    createdAt: group.createdAt,
+    updatedAt: group.updatedAt,
+  };
+}
+
+function serializePackageForIntegration(row) {
+  const senderDomain = row?.senderIdentity?.senderDomain?.domain || "";
+  const senderEmail = row?.senderIdentity?.localPart && senderDomain
+    ? `${row.senderIdentity.localPart}@${senderDomain}`
+    : "";
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    category: row.category || "",
+    difficulty: row.difficulty ?? 1,
+    previewText: row.previewText || "",
+    isActive: row.isActive,
+    isApproved: row.isApproved,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    emailTemplate: row.emailTemplate ? {
+      id: row.emailTemplate.id,
+      name: row.emailTemplate.name,
+      subject: row.emailTemplate.subject,
+    } : null,
+    landingPage: row.landingPage ? {
+      id: row.landingPage.id,
+      name: row.landingPage.name,
+      urlSlug: row.landingPage.urlSlug,
+    } : null,
+    senderIdentity: row.senderIdentity ? {
+      id: row.senderIdentity.id,
+      name: row.senderIdentity.name,
+      fromName: row.senderIdentity.fromName,
+      email: senderEmail,
+    } : null,
+  };
+}
+
 // PUT /api/integration/recipients
-// body: { fullSync?: boolean, items: [{ userPublicId, email, isActive? }] }
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
   if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
@@ -13,7 +61,6 @@ router.put("/recipients", async (req, res) => {
   const fullSync = !!req.body?.fullSync;
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
 
-  // basic validation
   const normalized = [];
   for (const it of items) {
     const userPublicId = String(it?.userPublicId || "").trim();
@@ -24,7 +71,6 @@ router.put("/recipients", async (req, res) => {
     normalized.push({ userPublicId, email, isActive });
   }
 
-  // upsert users by (tenantId,email) and set externalUserPublicId + isActive
   const seenEmails = new Set();
   let upserted = 0;
   let campaignUsersUpdated = 0;
@@ -34,7 +80,7 @@ router.put("/recipients", async (req, res) => {
     seenEmails.add(u.email);
 
     const user = await prisma.user.upsert({
-      where: { tenantId_email: { tenantId, email: u.email } }, // uses @@unique([tenantId,email])
+      where: { tenantId_email: { tenantId, email: u.email } },
       update: {
         externalUserPublicId: u.userPublicId,
         isActive: u.isActive,
@@ -44,14 +90,12 @@ router.put("/recipients", async (req, res) => {
         email: u.email,
         externalUserPublicId: u.userPublicId,
         isActive: u.isActive,
-        // ostatní pole nech prázdná – login účty řešíš jinde
       },
       select: { id: true },
     });
 
     upserted += 1;
 
-    // backfill to campaignUser so reports/users starts working immediately
     const r = await prisma.campaignUser.updateMany({
       where: { userId: user.id, externalUserPublicId: null },
       data: { externalUserPublicId: u.userPublicId },
@@ -59,7 +103,6 @@ router.put("/recipients", async (req, res) => {
     campaignUsersUpdated += r.count;
   }
 
-  // fullSync => deactivate users not in payload
   let deactivated = 0;
   if (fullSync) {
     const keep = Array.from(seenEmails.values());
@@ -85,20 +128,6 @@ router.put("/recipients", async (req, res) => {
     campaignUsersUpdated,
   });
 });
-
-function serializeGroup(group) {
-  return {
-    id: group.id,
-    name: group.name,
-    description: group.description || "",
-    memberCount: Number(group._count?.members || group.members?.length || 0),
-    memberUserPublicIds: (group.members || [])
-      .map((member) => member?.user?.externalUserPublicId || null)
-      .filter(Boolean),
-    createdAt: group.createdAt,
-    updatedAt: group.updatedAt,
-  };
-}
 
 router.get("/groups", async (req, res) => {
   try {
@@ -131,15 +160,10 @@ router.post("/groups", async (req, res) => {
 
     const name = String(req.body?.name || "").trim();
     const description = String(req.body?.description || "").trim();
-
     if (!name) return res.status(400).json({ error: "Group name is required" });
 
     const created = await prisma.group.create({
-      data: {
-        tenantId,
-        name,
-        description: description || null,
-      },
+      data: { tenantId, name, description: description || null },
       include: {
         _count: { select: { members: true } },
         members: {
@@ -166,21 +190,14 @@ router.put("/groups/:id", async (req, res) => {
 
     const name = String(req.body?.name || "").trim();
     const description = String(req.body?.description || "").trim();
-
     if (!name) return res.status(400).json({ error: "Group name is required" });
 
-    const existing = await prisma.group.findFirst({
-      where: { id, tenantId },
-      select: { id: true },
-    });
+    const existing = await prisma.group.findFirst({ where: { id, tenantId }, select: { id: true } });
     if (!existing) return res.status(404).json({ error: "Group not found" });
 
     const updated = await prisma.group.update({
       where: { id },
-      data: {
-        name,
-        description: description || null,
-      },
+      data: { name, description: description || null },
       include: {
         _count: { select: { members: true } },
         members: {
@@ -205,15 +222,11 @@ router.delete("/groups/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
 
-    const existing = await prisma.group.findFirst({
-      where: { id, tenantId },
-      select: { id: true },
-    });
+    const existing = await prisma.group.findFirst({ where: { id, tenantId }, select: { id: true } });
     if (!existing) return res.status(404).json({ error: "Group not found" });
 
     await prisma.groupMember.deleteMany({ where: { groupId: id } });
     await prisma.group.delete({ where: { id } });
-
     res.status(204).send();
   } catch (err) {
     console.error("DELETE /api/integration/groups/:id error", err);
@@ -228,22 +241,12 @@ router.post("/groups/:id/members", async (req, res) => {
 
     const groupId = Number(req.params.id);
     const userPublicId = String(req.body?.userPublicId || "").trim();
-
-    if (!Number.isInteger(groupId) || !userPublicId) {
-      return res.status(400).json({ error: "Invalid input" });
-    }
+    if (!Number.isInteger(groupId) || !userPublicId) return res.status(400).json({ error: "Invalid input" });
 
     const [group, user] = await Promise.all([
-      prisma.group.findFirst({
-        where: { id: groupId, tenantId },
-        select: { id: true },
-      }),
-      prisma.user.findFirst({
-        where: { tenantId, externalUserPublicId: userPublicId },
-        select: { id: true },
-      }),
+      prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }),
+      prisma.user.findFirst({ where: { tenantId, externalUserPublicId: userPublicId }, select: { id: true } }),
     ]);
-
     if (!group) return res.status(404).json({ error: "Group not found" });
     if (!user) return res.status(404).json({ error: "User not found" });
 
@@ -278,28 +281,16 @@ router.delete("/groups/:id/members/:userPublicId", async (req, res) => {
 
     const groupId = Number(req.params.id);
     const userPublicId = String(req.params.userPublicId || "").trim();
-
-    if (!Number.isInteger(groupId) || !userPublicId) {
-      return res.status(400).json({ error: "Invalid input" });
-    }
+    if (!Number.isInteger(groupId) || !userPublicId) return res.status(400).json({ error: "Invalid input" });
 
     const [group, user] = await Promise.all([
-      prisma.group.findFirst({
-        where: { id: groupId, tenantId },
-        select: { id: true },
-      }),
-      prisma.user.findFirst({
-        where: { tenantId, externalUserPublicId: userPublicId },
-        select: { id: true },
-      }),
+      prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }),
+      prisma.user.findFirst({ where: { tenantId, externalUserPublicId: userPublicId }, select: { id: true } }),
     ]);
-
     if (!group) return res.status(404).json({ error: "Group not found" });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    await prisma.groupMember.deleteMany({
-      where: { groupId, userId: user.id },
-    });
+    await prisma.groupMember.deleteMany({ where: { groupId, userId: user.id } });
 
     const updated = await prisma.group.findUnique({
       where: { id: groupId },
@@ -319,60 +310,13 @@ router.delete("/groups/:id/members/:userPublicId", async (req, res) => {
   }
 });
 
-function serializePackageForIntegration(row) {
-  const senderDomain = row?.senderIdentity?.senderDomain?.domain || "";
-  const senderEmail =
-    row?.senderIdentity?.localPart && senderDomain
-      ? `${row.senderIdentity.localPart}@${senderDomain}`
-      : "";
-
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description || "",
-    category: row.category || "",
-    difficulty: row.difficulty ?? 1,
-    previewText: row.previewText || "",
-    isActive: row.isActive,
-    isApproved: row.isApproved,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    emailTemplate: row.emailTemplate
-      ? {
-          id: row.emailTemplate.id,
-          name: row.emailTemplate.name,
-          subject: row.emailTemplate.subject,
-        }
-      : null,
-    landingPage: row.landingPage
-      ? {
-          id: row.landingPage.id,
-          name: row.landingPage.name,
-          urlSlug: row.landingPage.urlSlug,
-        }
-      : null,
-    senderIdentity: row.senderIdentity
-      ? {
-          id: row.senderIdentity.id,
-          name: row.senderIdentity.name,
-          fromName: row.senderIdentity.fromName,
-          email: senderEmail,
-        }
-      : null,
-  };
-}
-
 router.get("/packages", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const rows = await prisma.campaignPackage.findMany({
-      where: {
-        tenantId,
-        isActive: true,
-        isApproved: true,
-      },
+      where: { tenantId, isActive: true, isApproved: true },
       orderBy: [{ difficulty: "asc" }, { name: "asc" }],
       include: {
         emailTemplate: { select: { id: true, name: true, subject: true } },
@@ -402,17 +346,10 @@ router.get("/packages/:id", async (req, res) => {
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: "Invalid id" });
-    }
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
 
     const row = await prisma.campaignPackage.findFirst({
-      where: {
-        id,
-        tenantId,
-        isActive: true,
-        isApproved: true,
-      },
+      where: { id, tenantId, isActive: true, isApproved: true },
       include: {
         emailTemplate: { select: { id: true, name: true, subject: true } },
         landingPage: { select: { id: true, name: true, urlSlug: true } },
@@ -428,14 +365,103 @@ router.get("/packages/:id", async (req, res) => {
       },
     });
 
-    if (!row) {
-      return res.status(404).json({ error: "Package not found" });
-    }
-
+    if (!row) return res.status(404).json({ error: "Package not found" });
     res.json(serializePackageForIntegration(row));
   } catch (err) {
     console.error("GET /api/integration/packages/:id error", err);
     res.status(500).json({ error: err?.message || "Failed to load package" });
+  }
+});
+
+router.post("/campaigns", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const packageId = Number(req.body?.packageId);
+    const scheduledAt = req.body?.scheduledAt ? new Date(req.body.scheduledAt) : null;
+    const targetMode = String(req.body?.targetMode || "group").toLowerCase();
+    const targetGroupId = req.body?.targetGroupId != null && req.body?.targetGroupId !== ""
+      ? Number(req.body.targetGroupId)
+      : null;
+    const userPublicIds = Array.isArray(req.body?.userPublicIds)
+      ? req.body.userPublicIds.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").trim() || null;
+    const audienceName = String(req.body?.audienceName || "").trim() || null;
+
+    if (!Number.isInteger(packageId) || packageId <= 0) return res.status(400).json({ error: "Invalid packageId" });
+    if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return res.status(400).json({ error: "Invalid scheduledAt" });
+    if (!["group", "users"].includes(targetMode)) return res.status(400).json({ error: "Invalid targetMode" });
+
+    const pkg = await prisma.campaignPackage.findFirst({
+      where: { id: packageId, tenantId, isActive: true, isApproved: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        emailTemplateId: true,
+        landingPageId: true,
+        senderIdentityId: true,
+      },
+    });
+    if (!pkg) return res.status(404).json({ error: "Package not found" });
+
+    let targetGroup = null;
+    let users = [];
+
+    if (targetMode === "group") {
+      if (!Number.isInteger(targetGroupId) || targetGroupId <= 0) return res.status(400).json({ error: "Invalid targetGroupId" });
+      targetGroup = await prisma.group.findFirst({
+        where: { id: targetGroupId, tenantId },
+        include: { members: { include: { user: true } } },
+      });
+      if (!targetGroup) return res.status(404).json({ error: "Group not found" });
+      users = (targetGroup.members || []).map((item) => item.user).filter((user) => user?.id && user?.isActive);
+    } else {
+      users = await prisma.user.findMany({
+        where: {
+          tenantId,
+          externalUserPublicId: { in: userPublicIds },
+          isActive: true,
+        },
+      });
+      if (!users.length) return res.status(400).json({ error: "No recipients found" });
+    }
+
+    const created = await prisma.campaign.create({
+      data: {
+        tenantId,
+        name: name || `${pkg.name}${audienceName ? ` · ${audienceName}` : ""}`,
+        description: description || pkg.description || null,
+        scheduledAt,
+        packageId: pkg.id,
+        emailTemplateId: pkg.emailTemplateId,
+        landingPageId: pkg.landingPageId,
+        senderIdentityId: pkg.senderIdentityId,
+        targetGroupId: targetGroup?.id || null,
+        targetUsers: {
+          create: users.map((user) => ({
+            userId: user.id,
+            externalUserPublicId: user.externalUserPublicId || null,
+          })),
+        },
+      },
+      include: {
+        package: true,
+        emailTemplate: true,
+        landingPage: true,
+        senderIdentity: { include: { senderDomain: true } },
+        targetGroup: true,
+        targetUsers: { include: { user: true } },
+      },
+    });
+
+    res.status(201).json(created);
+  } catch (err) {
+    console.error("POST /api/integration/campaigns error", err);
+    res.status(500).json({ error: err?.message || "Failed to create campaign" });
   }
 });
 
