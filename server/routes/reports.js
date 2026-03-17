@@ -7,11 +7,12 @@ function parseRange(req) {
   const now = new Date();
   const range = String(req.query.range || "90d").trim();
 
-  // explicit from/to mají prioritu (volitelné)
   if (req.query.from && req.query.to) {
     const from = new Date(String(req.query.from));
     const to = new Date(String(req.query.to));
-    if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) return { from, to, range: "custom" };
+    if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
+      return { from, to, range: "custom" };
+    }
   }
 
   const m = /^(\d+)\s*d$/.exec(range);
@@ -31,10 +32,144 @@ function rate(n, d) {
   return n / d;
 }
 
-// risk: jednoduchá robustní metrika (0–100)
 function riskScore(clickRate, submitRate, reportRate) {
   const r = (0.55 * submitRate) + (0.45 * clickRate) - (0.25 * reportRate);
   return Math.max(0, Math.min(100, Math.round(r * 100)));
+}
+
+function riskBucketFromScore(score) {
+  if (score >= 60) return "high";
+  if (score >= 30) return "medium";
+  return "low";
+}
+
+function riskLabelFromBucket(bucket) {
+  if (bucket === "high") return "Vysoké riziko";
+  if (bucket === "medium") return "Střední riziko";
+  return "Nízké riziko";
+}
+
+function isoOrNull(value) {
+  return value?.toISOString?.() || null;
+}
+
+function getLastEventAt(row) {
+  return row.reportedAt || row.submittedAt || row.clickedAt || row.openedAt || row.sentAt || null;
+}
+
+function getEventKey(row) {
+  if (row.submittedAt) return "submitted";
+  if (row.clickedAt) return "clicked";
+  if (row.reportedAt) return "reported";
+  return "delivered";
+}
+
+function getEventLabel(eventKey) {
+  if (eventKey === "submitted") return "Vyplněno";
+  if (eventKey === "clicked") return "Kliknuto";
+  if (eventKey === "reported") return "Nahlášeno";
+  return "Doručeno";
+}
+
+function formatAvgReportTime(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  const hours = Math.max(1, Math.round(ms / 3600000));
+  if (hours < 24) return `${hours} h`;
+  const days = Math.max(1, Math.round(hours / 24));
+  return `${days} d`;
+}
+
+function buildPreviewCampaign(item) {
+  const senderDomain = item?.campaign?.senderIdentity?.senderDomain?.domain || "";
+  const localPart = item?.campaign?.senderIdentity?.localPart || "";
+  const senderEmail = localPart && senderDomain ? `${localPart}@${senderDomain}` : "";
+  const hasLandingPage = Boolean(item?.campaign?.landingPageId);
+  const eventKey = getEventKey(item);
+
+  return {
+    id: `${item.campaignId}-${item.externalUserPublicId || item.user?.externalUserPublicId || "user"}`,
+    campaignId: item.campaignId,
+    campaignName: item?.campaign?.name || `Campaign ${item.campaignId}`,
+    name: item?.campaign?.name || `Campaign ${item.campaignId}`,
+    audience: item?.campaign?.targetGroup?.name || item?.user?.department || "—",
+    status: item?.campaign?.status || null,
+    scheduledAt: isoOrNull(item?.campaign?.scheduledAt),
+    sentAt: isoOrNull(item?.sentAt),
+    delivered: item?.delivered ? 1 : 0,
+    clickRate: item?.clickedAt || item?.submittedAt ? 1 : 0,
+    submitRate: hasLandingPage ? (item?.submittedAt ? 1 : 0) : 0,
+    reportRate: item?.reportedAt ? 1 : 0,
+    hasLandingPage,
+    event: eventKey,
+    eventLabel: getEventLabel(eventKey),
+    senderIdentity: {
+      displayName: item?.campaign?.senderIdentity?.fromName || item?.campaign?.senderIdentity?.name || "Security Notification",
+      email: senderEmail || "—",
+      replyTo: item?.campaign?.senderIdentity?.replyTo || senderEmail || "—",
+      domain: senderDomain || "—",
+    },
+    emailTemplate: {
+      subject: item?.campaign?.emailTemplate?.subject || item?.campaign?.emailTemplate?.name || item?.campaign?.name || "—",
+      preheader: item?.campaign?.package?.previewText || "",
+      heading: item?.campaign?.package?.name || item?.campaign?.name || "Kampaň",
+      intro: item?.campaign?.description || item?.campaign?.package?.description || "Phishingová kampaň.",
+      cta: "Pokračovat",
+      footer: "",
+    },
+    landingPage: hasLandingPage
+      ? {
+          title: item?.campaign?.landingPage?.name || "Landing page",
+          subtitle: item?.campaign?.package?.previewText || item?.campaign?.package?.description || "",
+          fields: ["Firemní e-mail", "Heslo"],
+          cta: "Pokračovat",
+        }
+      : null,
+  };
+}
+
+function buildTimeline(campaigns = []) {
+  return campaigns
+    .flatMap((item) => {
+      const events = [];
+      if (item?.sentAt) {
+        events.push({
+          id: `${item.id}-timeline-delivered`,
+          at: item.sentAt,
+          label: "Doručeno",
+          campaignName: item.campaignName,
+        });
+      }
+
+      if (item?.event === "clicked" || item?.event === "submitted") {
+        events.push({
+          id: `${item.id}-timeline-clicked`,
+          at: item.sentAt,
+          label: "Kliknuto",
+          campaignName: item.campaignName,
+        });
+      }
+
+      if (item?.event === "submitted") {
+        events.push({
+          id: `${item.id}-timeline-submitted`,
+          at: item.sentAt,
+          label: "Vyplněno",
+          campaignName: item.campaignName,
+        });
+      }
+
+      if (item?.event === "reported") {
+        events.push({
+          id: `${item.id}-timeline-reported`,
+          at: item.sentAt,
+          label: "Nahlášeno",
+          campaignName: item.campaignName,
+        });
+      }
+
+      return events;
+    })
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
 }
 
 // GET /api/reports/summary
@@ -48,17 +183,11 @@ router.get("/summary", async (req, res) => {
   };
 
   const sent = await prisma.campaignUser.count({ where: baseWhere });
-
-  const delivered = await prisma.campaignUser.count({
-    where: { ...baseWhere, delivered: true },
-  });
-
+  const delivered = await prisma.campaignUser.count({ where: { ...baseWhere, delivered: true } });
   const opened = await prisma.campaignUser.count({ where: { ...baseWhere, openedAt: { not: null } } });
   const clicked = await prisma.campaignUser.count({ where: { ...baseWhere, clickedAt: { not: null } } });
   const submitted = await prisma.campaignUser.count({ where: { ...baseWhere, submittedAt: { not: null } } });
   const reported = await prisma.campaignUser.count({ where: { ...baseWhere, reportedAt: { not: null } } });
-
-  // bounced: pokud nemáš explicitně, nech 0 nebo odvoď (sent - delivered) jen pokud delivered opravdu značí SMTP success
   const bounced = Math.max(0, sent - delivered);
 
   const lastCampaign = await prisma.campaign.findFirst({
@@ -80,7 +209,6 @@ router.get("/summary", async (req, res) => {
     select: { id: true, name: true, status: true, scheduledAt: true },
   });
 
-  // per-campaign totals (jednoduché – N+1, pro start OK; později optimalizujeme)
   const recentWithTotals = [];
   for (const c of recentCampaigns) {
     const cw = { campaignId: c.id, sentAt: { not: null } };
@@ -109,7 +237,7 @@ router.get("/summary", async (req, res) => {
   }
 
   res.json({
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     period: { range, from: from.toISOString(), to: to.toISOString() },
     totals: { sent, delivered, opened, clicked, submitted, reported, bounced },
     rates: {
@@ -119,8 +247,8 @@ router.get("/summary", async (req, res) => {
       reportRate: rate(reported, delivered),
     },
     campaigns: {
-      lastRunAt: lastCampaign?.scheduledAt?.toISOString?.() || null,
-      nextRunAt: nextCampaign?.scheduledAt?.toISOString?.() || null,
+      lastRunAt: isoOrNull(lastCampaign?.scheduledAt),
+      nextRunAt: isoOrNull(nextCampaign?.scheduledAt),
     },
     recentCampaigns: recentWithTotals,
   });
@@ -135,8 +263,6 @@ router.get("/users", async (req, res) => {
   const pageSize = clampInt(req.query.pageSize, 50, 10, 200);
   const sort = String(req.query.sort || "riskScore_desc").trim();
 
-  // Na začátek robustně: stáhneme agregaci per user v paměti pro dané období.
-  // Pokud čekáš tisíce uživatelů * stovky kampaní, přepneme to na SQL agregaci.
   const rows = await prisma.campaignUser.findMany({
     where: {
       campaign: { tenantId },
@@ -151,6 +277,11 @@ router.get("/users", async (req, res) => {
       submittedAt: true,
       reportedAt: true,
       sentAt: true,
+      campaign: {
+        select: {
+          landingPageId: true,
+        },
+      },
     },
   });
 
@@ -159,37 +290,48 @@ router.get("/users", async (req, res) => {
     const id = r.externalUserPublicId;
     const cur = map.get(id) || {
       userPublicId: id,
-      totals: { delivered: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 },
+      totals: { delivered: 0, opened: 0, clicked: 0, submitted: 0, reported: 0, submitEligible: 0 },
       lastEventAt: null,
     };
 
+    if (r.campaign?.landingPageId) cur.totals.submitEligible += 1;
     if (r.delivered) cur.totals.delivered += 1;
     if (r.openedAt) cur.totals.opened += 1;
     if (r.clickedAt) cur.totals.clicked += 1;
     if (r.submittedAt) cur.totals.submitted += 1;
     if (r.reportedAt) cur.totals.reported += 1;
 
-    const last = r.reportedAt || r.submittedAt || r.clickedAt || r.openedAt || r.sentAt;
+    const last = getLastEventAt(r);
     if (last && (!cur.lastEventAt || new Date(last) > new Date(cur.lastEventAt))) cur.lastEventAt = last;
 
     map.set(id, cur);
   }
 
   const items = Array.from(map.values()).map((u) => {
-    const delivered = u.totals.delivered;
-    const clickRate = rate(u.totals.clicked, delivered);
-    const submitRate = rate(u.totals.submitted, delivered);
-    const reportRate = rate(u.totals.reported, delivered);
+    const deliveredCount = u.totals.delivered;
+    const submitEligible = u.totals.submitEligible;
+    const clickRate = rate(u.totals.clicked, deliveredCount);
+    const submitRate = rate(u.totals.submitted, submitEligible);
+    const reportRate = rate(u.totals.reported, deliveredCount);
+    const score = riskScore(clickRate, submitRate, reportRate);
+    const bucket = riskBucketFromScore(score);
+
     return {
       userPublicId: u.userPublicId,
       totals: u.totals,
-      rates: { clickRate, submitRate, reportRate, openRate: rate(u.totals.opened, delivered) },
-      riskScore: riskScore(clickRate, submitRate, reportRate),
-      lastEventAt: u.lastEventAt ? new Date(u.lastEventAt).toISOString() : null,
+      rates: {
+        clickRate,
+        submitRate,
+        reportRate,
+        openRate: rate(u.totals.opened, deliveredCount),
+      },
+      riskScore: score,
+      riskBucket: bucket,
+      riskLabel: riskLabelFromBucket(bucket),
+      lastEventAt: isoOrNull(u.lastEventAt),
     };
   });
 
-  // sort
   const cmp = (a, b) => {
     const dir = sort.endsWith("_asc") ? 1 : -1;
     const key = sort.replace(/_(asc|desc)$/, "");
@@ -218,7 +360,7 @@ router.get("/users", async (req, res) => {
   const paged = items.slice(start, start + pageSize);
 
   res.json({
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     period: { range, from: from.toISOString(), to: to.toISOString() },
     page,
     pageSize,
@@ -233,37 +375,178 @@ router.get("/users/:userPublicId", async (req, res) => {
   const { from, to, range } = parseRange(req);
   const userPublicId = String(req.params.userPublicId || "").trim();
 
-  const rows = await prisma.campaignUser.findMany({
-    where: {
-      campaign: { tenantId },
-      sentAt: { gte: from, lt: to },
-      externalUserPublicId: userPublicId,
-    },
-    orderBy: { sentAt: "desc" },
-    take: 200,
-    select: {
-      campaignId: true,
-      sentAt: true,
-      delivered: true,
-      openedAt: true,
-      clickedAt: true,
-      submittedAt: true,
-      reportedAt: true,
-    },
-  });
+  const [userRecord, rows] = await Promise.all([
+    prisma.user.findFirst({
+      where: { tenantId, externalUserPublicId: userPublicId },
+      select: {
+        externalUserPublicId: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        fullName: true,
+        department: true,
+        role: true,
+        isActive: true,
+      },
+    }),
+    prisma.campaignUser.findMany({
+      where: {
+        campaign: { tenantId },
+        sentAt: { gte: from, lt: to },
+        externalUserPublicId: userPublicId,
+      },
+      orderBy: { sentAt: "desc" },
+      take: 200,
+      select: {
+        campaignId: true,
+        externalUserPublicId: true,
+        sentAt: true,
+        delivered: true,
+        openedAt: true,
+        clickedAt: true,
+        submittedAt: true,
+        reportedAt: true,
+        user: {
+          select: {
+            externalUserPublicId: true,
+            email: true,
+            department: true,
+          },
+        },
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            status: true,
+            scheduledAt: true,
+            landingPageId: true,
+            targetGroup: { select: { name: true } },
+            package: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                previewText: true,
+              },
+            },
+            emailTemplate: {
+              select: {
+                id: true,
+                name: true,
+                subject: true,
+              },
+            },
+            landingPage: {
+              select: {
+                id: true,
+                name: true,
+                urlSlug: true,
+              },
+            },
+            senderIdentity: {
+              select: {
+                id: true,
+                name: true,
+                fromName: true,
+                localPart: true,
+                replyTo: true,
+                senderDomain: {
+                  select: {
+                    domain: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const totals = { delivered: 0, opened: 0, clicked: 0, submitted: 0, reported: 0, submitEligible: 0 };
+  let lastEventAt = null;
+  const reportDurations = [];
+
+  for (const row of rows) {
+    if (row.campaign?.landingPageId) totals.submitEligible += 1;
+    if (row.delivered) totals.delivered += 1;
+    if (row.openedAt) totals.opened += 1;
+    if (row.clickedAt) totals.clicked += 1;
+    if (row.submittedAt) totals.submitted += 1;
+    if (row.reportedAt) totals.reported += 1;
+
+    const last = getLastEventAt(row);
+    if (last && (!lastEventAt || new Date(last) > new Date(lastEventAt))) lastEventAt = last;
+
+    if (row.sentAt && row.reportedAt) {
+      reportDurations.push(new Date(row.reportedAt).getTime() - new Date(row.sentAt).getTime());
+    }
+  }
+
+  const clickRate = rate(totals.clicked, totals.delivered);
+  const submitRate = rate(totals.submitted, totals.submitEligible);
+  const reportRate = rate(totals.reported, totals.delivered);
+  const score = riskScore(clickRate, submitRate, reportRate);
+  const bucket = riskBucketFromScore(score);
+  const campaigns = rows.map((row) => buildPreviewCampaign(row));
+  const avgReportTimeMs = reportDurations.length
+    ? reportDurations.reduce((acc, value) => acc + value, 0) / reportDurations.length
+    : NaN;
+
+  const externalUser = userRecord
+    ? {
+        userPublicId: userRecord.externalUserPublicId,
+        name: userRecord.firstName || userRecord.fullName || "",
+        surname: userRecord.lastName || "",
+        email: userRecord.email || null,
+        department: userRecord.department || null,
+        role: userRecord.role || null,
+        isActive: userRecord.isActive,
+      }
+    : null;
+
+  const primaryRiskDriver =
+    submitRate > 0 && submitRate >= clickRate
+      ? "Vyplnění formuláře"
+      : clickRate > 0
+        ? "Kliknutí"
+        : reportRate > 0
+          ? "Nahlášení"
+          : "—";
 
   res.json({
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     userPublicId,
+    user: externalUser,
     period: { range, from: from.toISOString(), to: to.toISOString() },
+    totals,
+    rates: {
+      clickRate,
+      submitRate,
+      reportRate,
+      openRate: rate(totals.opened, totals.delivered),
+    },
+    riskScore: score,
+    riskBucket: bucket,
+    riskLabel: riskLabelFromBucket(bucket),
+    lastEventAt: isoOrNull(lastEventAt),
+    profile: {
+      campaignsTargeted: rows.length,
+      primaryRiskDriver,
+      avgReportTime: formatAvgReportTime(avgReportTimeMs),
+    },
+    campaigns,
+    history: campaigns,
+    timeline: buildTimeline(campaigns),
     events: rows.map((r) => ({
       campaignId: r.campaignId,
-      sentAt: r.sentAt?.toISOString?.() || null,
+      sentAt: isoOrNull(r.sentAt),
       delivered: !!r.delivered,
-      openedAt: r.openedAt?.toISOString?.() || null,
-      clickedAt: r.clickedAt?.toISOString?.() || null,
-      submittedAt: r.submittedAt?.toISOString?.() || null,
-      reportedAt: r.reportedAt?.toISOString?.() || null,
+      openedAt: isoOrNull(r.openedAt),
+      clickedAt: isoOrNull(r.clickedAt),
+      submittedAt: isoOrNull(r.submittedAt),
+      reportedAt: isoOrNull(r.reportedAt),
     })),
   });
 });
