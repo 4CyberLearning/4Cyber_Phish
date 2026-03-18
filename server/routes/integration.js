@@ -108,7 +108,13 @@ router.put("/recipients", async (req, res) => {
     upserted += 1;
 
     const r = await prisma.campaignUser.updateMany({
-      where: { userId: user.id, externalUserPublicId: null },
+      where: {
+        userId: user.id,
+        OR: [
+          { externalUserPublicId: null },
+          { externalUserPublicId: { not: u.userPublicId } },
+        ],
+      },
       data: { externalUserPublicId: u.userPublicId },
     });
     campaignUsersUpdated += r.count;
