@@ -53,17 +53,6 @@ function serializePackageForIntegration(row) {
   };
 }
 
-router.get("/ping", async (req, res) => {
-  const tenantId = req.integration?.tenantId;
-  if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
-
-  return res.json({
-    ok: true,
-    tenantId,
-    service: "4CyberPhish",
-  });
-});
-
 // PUT /api/integration/recipients
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
@@ -437,28 +426,14 @@ router.post("/campaigns", async (req, res) => {
       if (!targetGroup) return res.status(404).json({ error: "Group not found" });
       users = (targetGroup.members || []).map((item) => item.user).filter((user) => user?.id && user?.isActive);
     } else {
-      const requestedUserPublicIds = [...new Set(userPublicIds)];
       users = await prisma.user.findMany({
         where: {
           tenantId,
-          externalUserPublicId: { in: requestedUserPublicIds },
+          externalUserPublicId: { in: userPublicIds },
           isActive: true,
         },
       });
-
       if (!users.length) return res.status(400).json({ error: "No recipients found" });
-
-      const foundUserPublicIds = new Set(
-        users.map((user) => String(user.externalUserPublicId || "").trim()).filter(Boolean),
-      );
-      const missingUserPublicIds = requestedUserPublicIds.filter((userPublicId) => !foundUserPublicIds.has(userPublicId));
-
-      if (missingUserPublicIds.length) {
-        return res.status(400).json({
-          error: "Some recipients are missing or inactive",
-          missingUserPublicIds,
-        });
-      }
     }
 
     const created = await prisma.campaign.create({
