@@ -53,6 +53,22 @@ function serializePackageForIntegration(row) {
   };
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
+function compactString(value) {
+  const s = String(value || "").trim();
+  return s || null;
+}
+
+function buildFullName(firstName, lastName, email) {
+  const full = [firstName, lastName].filter(Boolean).join(" ").trim();
+  return full || email;
+}
+
 // PUT /api/integration/recipients
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
@@ -65,34 +81,78 @@ router.put("/recipients", async (req, res) => {
   for (const it of items) {
     const userPublicId = String(it?.userPublicId || "").trim();
     const email = String(it?.email || "").trim().toLowerCase();
+    const firstName = compactString(it?.name);
+    const lastName = compactString(it?.surname);
     const isActive = it?.isActive === false ? false : true;
 
-    if (!userPublicId || !email) continue;
-    normalized.push({ userPublicId, email, isActive });
+    if (!isUuid(userPublicId) || !email) continue;
+
+    normalized.push({
+      userPublicId,
+      email,
+      firstName,
+      lastName,
+      isActive,
+    });
   }
 
-  const seenEmails = new Set();
+  const seenPublicIds = new Set();
+  const keepPublicIds = [];
+  const conflictItems = [];
+
   let upserted = 0;
   let campaignUsersUpdated = 0;
+  let conflicts = 0;
 
   for (const u of normalized) {
-    if (seenEmails.has(u.email)) continue;
-    seenEmails.add(u.email);
+    if (seenPublicIds.has(u.userPublicId)) continue;
+    seenPublicIds.add(u.userPublicId);
+    keepPublicIds.push(u.userPublicId);
 
-    const user = await prisma.user.upsert({
-      where: { tenantId_email: { tenantId, email: u.email } },
-      update: {
-        externalUserPublicId: u.userPublicId,
-        isActive: u.isActive,
-      },
-      create: {
-        tenantId,
-        email: u.email,
-        externalUserPublicId: u.userPublicId,
-        isActive: u.isActive,
-      },
-      select: { id: true },
+    const byPublicId = await prisma.user.findFirst({
+      where: { tenantId, externalUserPublicId: u.userPublicId },
+      select: { id: true, email: true, externalUserPublicId: true },
     });
+
+    const byEmail = await prisma.user.findFirst({
+      where: { tenantId, email: u.email },
+      select: { id: true, email: true, externalUserPublicId: true },
+    });
+
+    if (byPublicId && byEmail && byPublicId.id !== byEmail.id) {
+      conflicts += 1;
+      conflictItems.push({
+        userPublicId: u.userPublicId,
+        email: u.email,
+        reason: "email_bound_to_other_user",
+      });
+      continue;
+    }
+
+    const target = byPublicId || byEmail;
+
+    const data = {
+      email: u.email,
+      externalUserPublicId: u.userPublicId,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      fullName: buildFullName(u.firstName, u.lastName, u.email),
+      isActive: u.isActive,
+    };
+
+    const user = target
+      ? await prisma.user.update({
+          where: { id: target.id },
+          data,
+          select: { id: true },
+        })
+      : await prisma.user.create({
+          data: {
+            tenantId,
+            ...data,
+          },
+          select: { id: true },
+        });
 
     upserted += 1;
 
@@ -106,17 +166,20 @@ router.put("/recipients", async (req, res) => {
       },
       data: { externalUserPublicId: u.userPublicId },
     });
+
     campaignUsersUpdated += r.count;
   }
 
   let deactivated = 0;
   if (fullSync) {
-    const keep = Array.from(seenEmails.values());
     const r = await prisma.user.updateMany({
       where: {
         tenantId,
-        email: { notIn: keep },
         isActive: true,
+        AND: [
+          { externalUserPublicId: { not: null } },
+          { externalUserPublicId: { notIn: keepPublicIds } },
+        ],
       },
       data: { isActive: false },
     });
@@ -132,6 +195,8 @@ router.put("/recipients", async (req, res) => {
     upserted,
     deactivated,
     campaignUsersUpdated,
+    conflicts,
+    conflictItems,
   });
 });
 
@@ -469,6 +534,17 @@ router.post("/campaigns", async (req, res) => {
     console.error("POST /api/integration/campaigns error", err);
     res.status(500).json({ error: err?.message || "Failed to create campaign" });
   }
+});
+
+router.get("/ping", async (req, res) => {
+  const tenantId = req.integration?.tenantId;
+  if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+  res.json({
+    ok: true,
+    tenantId,
+    service: "4CyberPhish",
+  });
 });
 
 export default router;

@@ -21,6 +21,12 @@ function parseRange(req) {
   return { from, to: now, range: `${days}d` };
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
 function clampInt(v, def, min, max) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -267,7 +273,6 @@ router.get("/users", async (req, res) => {
     where: {
       campaign: { tenantId },
       sentAt: { gte: from, lt: to },
-      externalUserPublicId: { not: null },
     },
     select: {
       externalUserPublicId: true,
@@ -277,9 +282,14 @@ router.get("/users", async (req, res) => {
       submittedAt: true,
       reportedAt: true,
       sentAt: true,
-      campaign: {
+      user: {
         select: {
-          landingPageId: true,
+          externalUserPublicId: true,
+          firstName: true,
+          lastName: true,
+          fullName: true,
+          email: true,
+          isActive: true,
         },
       },
     },
@@ -287,15 +297,42 @@ router.get("/users", async (req, res) => {
 
   const map = new Map();
   for (const r of rows) {
-    const id = r.externalUserPublicId;
-    const cur = map.get(id) || {
-      userPublicId: id,
-      totals: { delivered: 0, opened: 0, clicked: 0, submitted: 0, reported: 0, submitEligible: 0 },
+    const canonicalId = isUuid(r?.user?.externalUserPublicId)
+      ? r.user.externalUserPublicId
+      : isUuid(r?.externalUserPublicId)
+      ? r.externalUserPublicId
+      : null;
+
+    if (!canonicalId) continue;
+
+    const cur = map.get(canonicalId) || {
+      userPublicId: canonicalId,
+      totals: {
+        delivered: 0,
+        opened: 0,
+        clicked: 0,
+        submitted: 0,
+        reported: 0,
+        submitEligible: 0,
+      },
+      profile: r.user
+        ? {
+            name:
+              r.user.fullName ||
+              [r.user.firstName, r.user.lastName].filter(Boolean).join(" ").trim() ||
+              null,
+            email: r.user.email || null,
+            isActive: !!r.user.isActive,
+          }
+        : null,
       lastEventAt: null,
     };
 
     if (r.campaign?.landingPageId) cur.totals.submitEligible += 1;
-    if (r.delivered) cur.totals.delivered += 1;
+    if (r.delivered) {
+      cur.totals.delivered += 1;
+      cur.totals.submitEligible += 1;
+    }
     if (r.openedAt) cur.totals.opened += 1;
     if (r.clickedAt) cur.totals.clicked += 1;
     if (r.submittedAt) cur.totals.submitted += 1;
@@ -304,7 +341,7 @@ router.get("/users", async (req, res) => {
     const last = getLastEventAt(r);
     if (last && (!cur.lastEventAt || new Date(last) > new Date(cur.lastEventAt))) cur.lastEventAt = last;
 
-    map.set(id, cur);
+    map.set(canonicalId, cur);
   }
 
   const items = Array.from(map.values()).map((u) => {
