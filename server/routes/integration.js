@@ -70,6 +70,7 @@ function buildFullName(firstName, lastName, email) {
 }
 
 // PUT /api/integration/recipients
+// PUT /api/integration/recipients
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
   if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
