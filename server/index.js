@@ -29,6 +29,7 @@ import requireIntegrationAuth from "./middleware/requireIntegrationAuth.js";
 import reportsRouter from "./routes/reports.js";
 import integrationRouter from "./routes/integration.js";
 import packagesRouter from "./routes/packages.js";
+import { startCampaignScheduler } from "./services/campaignScheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,4 +202,5 @@ app.use((err, _req, res, _next) => {
 // ---------- Start serveru ----------
 app.listen(PORT, () => {
   console.log(`Backend listening on port ${PORT}`);
+  startCampaignScheduler();
 });

@@ -34,6 +34,7 @@ export function instrumentEmailHtml(html, trackingToken) {
   if (!html || !trackingToken) return html || "";
 
   let result = String(html);
+  const reportUrl = `${TRACKING_BASE}/t/r/${trackingToken}`;
 
   // už má pixel s tímto tokenem -> nepřidávej znovu
   const openPixelPath = `/t/o/${trackingToken}.gif`;

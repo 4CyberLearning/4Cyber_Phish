@@ -165,6 +165,36 @@ router.get("/c/:token", async (req, res) => {
   }
 });
 
+
+// ---- REPORT: GET /t/r/:token ----
+router.get("/r/:token", async (req, res) => {
+  noCache(res);
+
+  const token = String(req.params.token || "").trim();
+  const fallback = WEB_BASE || "/";
+
+  try {
+    if (!token) return res.redirect(302, fallback);
+
+    const cu = await prisma.campaignUser.findUnique({
+      where: { trackingToken: token },
+    });
+
+    if (cu) {
+      await recordInteraction(cu, InteractionType.REPORTED, {
+        source: "email_report_link",
+      });
+    }
+
+    const url = new URL(fallback || "/", fallback.startsWith("http") ? undefined : "http://localhost");
+    url.searchParams.set("phish_reported", "1");
+    return res.redirect(302, fallback.startsWith("http") ? url.toString() : `${fallback}${fallback.includes("?") ? "&" : "?"}phish_reported=1`);
+  } catch (e) {
+    console.error("REPORT tracking error", e);
+    return res.redirect(302, fallback);
+  }
+});
+
 // ---- LANDING FORM SUBMIT: POST /t/s/:token ----
 // Ukládá pouze reakci + boolean flagy, nikdy hodnoty z formuláře.
 router.post("/s/:token", async (req, res) => {

@@ -4,6 +4,7 @@ import { PrismaClient, CampaignStatus, InteractionType } from '@prisma/client';
 import { sendMail } from '../utils/mailer.js';
 import { instrumentEmailHtml, renderEmailTemplate } from '../utils/emailTracking.js';
 import prisma from "../db/prisma.js";
+import { sendCampaignNow } from "../services/campaignDispatch.js";
 
 const router = Router();
 
@@ -648,8 +649,8 @@ router.post('/campaigns/:id/send-now', async (req, res) => {
 
   try {
     const tenantId = await getTenantId();
-    await sendCampaignEmails(id, tenantId);
-    res.json({ ok: true });
+    const result = await sendCampaignNow(id, tenantId);
+    res.json(result);
   } catch (e) {
     console.error('POST /campaigns/:id/send-now failed', e);
     res.status(500).json({ error: e.message || 'Failed to send campaign' });
