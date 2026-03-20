@@ -424,12 +424,21 @@ router.get("/summary", async (req, res) => {
 
   const rows = await loadRowsForTenant(tenantId, from, to);
   const { totals, users, campaigns } = aggregateRows(rows);
-
   const delivered = totals.delivered;
   const recentCampaigns = campaigns.slice(0, 10);
 
+  const nextScheduled = await prisma.campaign.findFirst({
+    where: {
+      tenantId,
+      scheduledAt: { gt: new Date() },
+      status: { in: ["SCHEDULED", "PLANNED"] },
+    },
+    orderBy: { scheduledAt: "asc" },
+    select: { scheduledAt: true },
+  });
+
   res.json({
-    schemaVersion: "1.1",
+    schemaVersion: "1.2",
     source: "live",
     period: { range, from: from.toISOString(), to: to.toISOString() },
     totals,
@@ -444,7 +453,7 @@ router.get("/summary", async (req, res) => {
     },
     campaigns: {
       lastRunAt: campaigns[0]?.sentAt || campaigns[0]?.scheduledAt || null,
-      nextRunAt: null,
+      nextRunAt: nextScheduled?.scheduledAt?.toISOString?.() || null,
     },
     trends: buildTrendPoints(recentCampaigns, from),
     recentCampaigns,
