@@ -19,9 +19,10 @@ function serializeGroup(group) {
 
 function serializePackageForIntegration(row) {
   const senderDomain = row?.senderIdentity?.senderDomain?.domain || "";
-  const senderEmail = row?.senderIdentity?.localPart && senderDomain
-    ? `${row.senderIdentity.localPart}@${senderDomain}`
-    : "";
+  const senderEmail =
+    row?.senderIdentity?.localPart && senderDomain
+      ? `${row.senderIdentity.localPart}@${senderDomain}`
+      : "";
 
   return {
     id: row.id,
@@ -34,22 +35,31 @@ function serializePackageForIntegration(row) {
     isApproved: row.isApproved,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    emailTemplate: row.emailTemplate ? {
-      id: row.emailTemplate.id,
-      name: row.emailTemplate.name,
-      subject: row.emailTemplate.subject,
-    } : null,
-    landingPage: row.landingPage ? {
-      id: row.landingPage.id,
-      name: row.landingPage.name,
-      urlSlug: row.landingPage.urlSlug,
-    } : null,
-    senderIdentity: row.senderIdentity ? {
-      id: row.senderIdentity.id,
-      name: row.senderIdentity.name,
-      fromName: row.senderIdentity.fromName,
-      email: senderEmail,
-    } : null,
+    emailTemplate: row.emailTemplate
+      ? {
+          id: row.emailTemplate.id,
+          name: row.emailTemplate.name,
+          subject: row.emailTemplate.subject,
+          bodyHtml: row.emailTemplate.bodyHtml || "",
+        }
+      : null,
+    landingPage: row.landingPage
+      ? {
+          id: row.landingPage.id,
+          name: row.landingPage.name,
+          urlSlug: row.landingPage.urlSlug,
+          html: row.landingPage.html || "",
+        }
+      : null,
+    senderIdentity: row.senderIdentity
+      ? {
+          id: row.senderIdentity.id,
+          name: row.senderIdentity.name,
+          fromName: row.senderIdentity.fromName,
+          email: senderEmail,
+          replyTo: row.senderIdentity.replyTo || senderEmail,
+        }
+      : null,
   };
 }
 
@@ -391,17 +401,32 @@ router.get("/packages", async (req, res) => {
       where: { tenantId, isActive: true, isApproved: true },
       orderBy: [{ difficulty: "asc" }, { name: "asc" }],
       include: {
-        emailTemplate: { select: { id: true, name: true, subject: true } },
-        landingPage: { select: { id: true, name: true, urlSlug: true } },
-        senderIdentity: {
-          select: {
-            id: true,
-            name: true,
-            fromName: true,
-            localPart: true,
-            senderDomain: { select: { domain: true } },
-          },
+      emailTemplate: {
+        select: {
+          id: true,
+          name: true,
+          subject: true,
+          bodyHtml: true,
         },
+      },
+      landingPage: {
+        select: {
+          id: true,
+          name: true,
+          urlSlug: true,
+          html: true,
+        },
+      },
+      senderIdentity: {
+        select: {
+          id: true,
+          name: true,
+          fromName: true,
+          localPart: true,
+          replyTo: true,
+          senderDomain: { select: { domain: true } },
+        },
+      },
       },
     });
 
@@ -423,17 +448,32 @@ router.get("/packages/:id", async (req, res) => {
     const row = await prisma.campaignPackage.findFirst({
       where: { id, tenantId, isActive: true, isApproved: true },
       include: {
-        emailTemplate: { select: { id: true, name: true, subject: true } },
-        landingPage: { select: { id: true, name: true, urlSlug: true } },
-        senderIdentity: {
-          select: {
-            id: true,
-            name: true,
-            fromName: true,
-            localPart: true,
-            senderDomain: { select: { domain: true } },
-          },
+      emailTemplate: {
+        select: {
+          id: true,
+          name: true,
+          subject: true,
+          bodyHtml: true,
         },
+      },
+      landingPage: {
+        select: {
+          id: true,
+          name: true,
+          urlSlug: true,
+          html: true,
+        },
+      },
+      senderIdentity: {
+        select: {
+          id: true,
+          name: true,
+          fromName: true,
+          localPart: true,
+          replyTo: true,
+          senderDomain: { select: { domain: true } },
+        },
+      },
       },
     });
 

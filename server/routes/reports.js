@@ -157,9 +157,28 @@ async function loadRowsForTenant(tenantId, from, to) {
           createdAt: true,
           landingPageId: true,
           targetGroup: { select: { name: true } },
-          senderIdentity: { select: { fromName: true, localPart: true, senderDomain: { select: { domain: true } } } },
-          emailTemplate: { select: { subject: true, name: true } },
-          landingPage: { select: { name: true, urlSlug: true } },
+          senderIdentity: {
+            select: {
+              fromName: true,
+              localPart: true,
+              replyTo: true,
+              senderDomain: { select: { domain: true } },
+            },
+          },
+          emailTemplate: {
+            select: {
+              subject: true,
+              name: true,
+              bodyHtml: true,
+            },
+          },
+          landingPage: {
+            select: {
+              name: true,
+              urlSlug: true,
+              html: true,
+            },
+          },
         },
       },
     },
@@ -210,21 +229,31 @@ function aggregateRows(rows = []) {
       senderIdentity: campaign.senderIdentity
         ? {
             displayName: campaign.senderIdentity.fromName || "Security Notification",
-            email: campaign.senderIdentity.localPart && campaign.senderIdentity.senderDomain?.domain
-              ? `${campaign.senderIdentity.localPart}@${campaign.senderIdentity.senderDomain.domain}`
-              : "",
+            email:
+              campaign.senderIdentity.localPart && campaign.senderIdentity.senderDomain?.domain
+                ? `${campaign.senderIdentity.localPart}@${campaign.senderIdentity.senderDomain.domain}`
+                : "",
+            replyTo:
+              campaign.senderIdentity.replyTo ||
+              (
+                campaign.senderIdentity.localPart && campaign.senderIdentity.senderDomain?.domain
+                  ? `${campaign.senderIdentity.localPart}@${campaign.senderIdentity.senderDomain.domain}`
+                  : ""
+              ),
             domain: campaign.senderIdentity.senderDomain?.domain || "",
           }
         : null,
       emailTemplate: campaign.emailTemplate
         ? {
             subject: campaign.emailTemplate.subject || campaign.emailTemplate.name || campaign.name || "—",
+            bodyHtml: campaign.emailTemplate.bodyHtml || "",
           }
         : null,
       landingPage: campaign.landingPage
         ? {
             title: campaign.landingPage.name || "Landing page",
             slug: campaign.landingPage.urlSlug || "",
+            html: campaign.landingPage.html || "",
           }
         : null,
       totals: {
@@ -431,7 +460,7 @@ router.get("/summary", async (req, res) => {
     where: {
       tenantId,
       scheduledAt: { gt: new Date() },
-      status: { in: ["SCHEDULED", "PLANNED"] },
+      status: "SCHEDULED",
     },
     orderBy: { scheduledAt: "asc" },
     select: { scheduledAt: true },
