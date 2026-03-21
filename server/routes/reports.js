@@ -32,6 +32,12 @@ function rate(n, d) {
   return n / d;
 }
 
+function pct(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return n > 1 ? n : Math.round(n * 10000) / 100;
+}
+
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(value || "").trim(),
@@ -377,6 +383,11 @@ function buildTrendPoints(campaigns = [], from) {
         clickRate: 0,
         submitRate: 0,
         reportRate: 0,
+        clickedCount: 0,
+        deliveredCount: 0,
+        submitCount: 0,
+        submitEligibleCount: 0,
+        reportCount: 0,
         campaigns: [],
       },
     ];
@@ -389,9 +400,14 @@ function buildTrendPoints(campaigns = [], from) {
       key: `campaign-${campaign.id}`,
       label: new Date(campaign.sentAt || campaign.scheduledAt || 0).toLocaleDateString("cs-CZ"),
       date: campaign.sentAt || campaign.scheduledAt || null,
-      clickRate: campaign.clickRate,
-      submitRate: campaign.hasLandingPage ? campaign.submitRate : 0,
-      reportRate: campaign.reportRate,
+      clickRate: pct(campaign.clickRate),
+      submitRate: campaign.hasLandingPage ? pct(campaign.submitRate) : 0,
+      reportRate: pct(campaign.reportRate),
+      clickedCount: Number(campaign?.totals?.clicked || 0),
+      deliveredCount: Number(campaign?.totals?.delivered || 0),
+      submitCount: Number(campaign?.totals?.submitted || 0),
+      submitEligibleCount: Number(campaign?.totals?.submitEligible || 0),
+      reportCount: Number(campaign?.totals?.reported || 0),
       campaigns: [
         {
           id: campaign.id,
