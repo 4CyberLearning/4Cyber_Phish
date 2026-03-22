@@ -2,17 +2,16 @@
 import { Router } from "express";
 import { InteractionType } from "@prisma/client";
 import prisma from "../db/prisma.js";
+import { isCampaignInteractionWindowOpen } from "../services/campaignLifecycle.js";
 
 const router = Router();
 
-// základ pro veřejný web (landing stránky)
 const WEB_BASE =
   (process.env.PUBLIC_WEB_BASE_URL || process.env.PUBLIC_BASE_URL || "").replace(
     /\/$/,
     ""
   );
 
-// 1x1 transparentní GIF (base64)
 const PIXEL = Buffer.from(
   "R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=",
   "base64"
@@ -46,18 +45,15 @@ function safeDecodeURIComponent(v) {
 }
 
 function normalizeRedirectTarget(rawTarget) {
-  // povol: http/https absolutní nebo relativní "/..."
   if (!rawTarget) return "/";
 
   const t = String(rawTarget).trim();
   if (!t) return "/";
 
-  // relativní
   if (t.startsWith("/")) {
     return WEB_BASE ? WEB_BASE + t : t;
   }
 
-  // absolutní
   try {
     const u = new URL(t);
     if (u.protocol !== "http:" && u.protocol !== "https:") return "/";
@@ -67,7 +63,29 @@ function normalizeRedirectTarget(rawTarget) {
   }
 }
 
+async function loadCampaignUserWithCampaign(token) {
+  return prisma.campaignUser.findUnique({
+    where: { trackingToken: token },
+    include: {
+      campaign: {
+        select: {
+          id: true,
+          status: true,
+          startedAt: true,
+          cutoffAt: true,
+          finishedAt: true,
+          cancelledAt: true,
+        },
+      },
+    },
+  });
+}
+
 async function recordInteraction(cu, type, meta) {
+  if (!cu?.campaign || !isCampaignInteractionWindowOpen(cu.campaign)) {
+    return false;
+  }
+
   const metaValue =
     meta && typeof meta === "object" && Object.keys(meta).length > 0
       ? meta
@@ -115,17 +133,15 @@ async function recordInteraction(cu, type, meta) {
   }
 
   await prisma.$transaction(tx);
+  return true;
 }
 
-// ---- OPEN pixel: GET /t/o/:token.gif ----
 router.get("/o/:token.gif", async (req, res) => {
   try {
     const token = String(req.params.token || "").trim();
     if (!token) return sendPixel(res);
 
-    const cu = await prisma.campaignUser.findUnique({
-      where: { trackingToken: token },
-    });
+    const cu = await loadCampaignUserWithCampaign(token);
 
     if (cu) {
       await recordInteraction(cu, InteractionType.OPENED);
@@ -133,26 +149,20 @@ router.get("/o/:token.gif", async (req, res) => {
   } catch (e) {
     console.error("OPEN tracking error", e);
   } finally {
-    // vždy vrátíme pixel, i když chyba
     sendPixel(res);
   }
 });
 
-// ---- CLICK: GET /t/c/:token?u=<encodedTarget> ----
 router.get("/c/:token", async (req, res) => {
   noCache(res);
 
   const token = String(req.params.token || "").trim();
   const decoded = req.query.u ? safeDecodeURIComponent(req.query.u) : null;
-
-  // default redirect (bezpečné)
   const redirectTarget = normalizeRedirectTarget(decoded);
 
   try {
     if (token) {
-      const cu = await prisma.campaignUser.findUnique({
-        where: { trackingToken: token },
-      });
+      const cu = await loadCampaignUserWithCampaign(token);
 
       if (cu) {
         await recordInteraction(cu, InteractionType.CLICKED);
@@ -165,8 +175,6 @@ router.get("/c/:token", async (req, res) => {
   }
 });
 
-
-// ---- REPORT: GET /t/r/:token ----
 router.get("/r/:token", async (req, res) => {
   noCache(res);
 
@@ -176,9 +184,7 @@ router.get("/r/:token", async (req, res) => {
   try {
     if (!token) return res.redirect(302, fallback);
 
-    const cu = await prisma.campaignUser.findUnique({
-      where: { trackingToken: token },
-    });
+    const cu = await loadCampaignUserWithCampaign(token);
 
     if (cu) {
       await recordInteraction(cu, InteractionType.REPORTED, {
@@ -195,16 +201,12 @@ router.get("/r/:token", async (req, res) => {
   }
 });
 
-// ---- LANDING FORM SUBMIT: POST /t/s/:token ----
-// Ukládá pouze reakci + boolean flagy, nikdy hodnoty z formuláře.
 router.post("/s/:token", async (req, res) => {
   try {
     const token = String(req.params.token || "").trim();
     if (!token) return res.status(404).json({ ok: false });
 
-    const cu = await prisma.campaignUser.findUnique({
-      where: { trackingToken: token },
-    });
+    const cu = await loadCampaignUserWithCampaign(token);
     if (!cu) return res.status(404).json({ ok: false });
 
     const pageSlug =
@@ -212,12 +214,12 @@ router.post("/s/:token", async (req, res) => {
         ? req.body.pageSlug.slice(0, 200)
         : null;
 
-    await recordInteraction(cu, InteractionType.SUBMITTED, {
+    const recorded = await recordInteraction(cu, InteractionType.SUBMITTED, {
       pageSlug,
       submitted: true,
     });
 
-    return res.json({ ok: true });
+    return res.json({ ok: recorded });
   } catch (err) {
     console.error("Landing submit tracking error:", err);
     return res.status(500).json({ ok: false });

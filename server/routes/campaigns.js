@@ -1,47 +1,31 @@
 // server/routes/campaigns.js
-import { Router } from 'express';
-import { PrismaClient, CampaignStatus, InteractionType } from '@prisma/client';
-import { sendMail } from '../utils/mailer.js';
-import { instrumentEmailHtml, renderEmailTemplate } from '../utils/emailTracking.js';
+import { Router } from "express";
+import {
+  CampaignLifecycleEventType,
+  CampaignSource,
+  CampaignStatus,
+  CampaignTargetType,
+} from "@prisma/client";
 import prisma from "../db/prisma.js";
 import { sendCampaignNow } from "../services/campaignDispatch.js";
+import {
+  buildLifecycleEventData,
+  campaignIntegrationInclude,
+  canCancelCampaign,
+  normalizeCampaignActor,
+  parseDateOrNull,
+} from "../services/campaignLifecycle.js";
 
 const router = Router();
-
-function toSet(value) {
-  if (!value) return new Set();
-  return new Set(
-    String(value)
-      .split(/[,\s;]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-async function buildSendPolicy(tenantId) {
-  const envAllowedRecipients = toSet(process.env.ALLOWED_RECIPIENTS || "");
-  const envAllowedDomains = toSet(process.env.ALLOWED_RECIPIENT_DOMAINS || "");
-  const envAllowedFromDomains = toSet(process.env.ALLOWED_FROM_DOMAINS || "");
-
-  const dbDomains = await prisma.allowedRecipientDomain.findMany({
-    where: { tenantId },
-    select: { domain: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const allowedRecipientDomains = new Set([
-    ...envAllowedDomains,
-    ...dbDomains.map((d) => String(d.domain).trim().toLowerCase()).filter(Boolean),
-  ]);
-
-  return {
-    allowedRecipients: envAllowedRecipients,
-    allowedRecipientDomains,
-    allowedFromDomains: envAllowedFromDomains,
-  };
-}
-
 const DEFAULT_TENANT_SLUG = "demo";
+
+const campaignAdminInclude = {
+  ...campaignIntegrationInclude,
+  interactions: {
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  },
+};
 
 async function getTenantId() {
   let tenant = await prisma.tenant.findUnique({
@@ -68,7 +52,7 @@ async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, lan
       prisma.emailTemplate.findFirst({
         where: { id: emailTemplateId, tenantId },
         select: { id: true },
-      })
+      }),
     );
   } else {
     checks.push(Promise.resolve(true));
@@ -79,7 +63,7 @@ async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, lan
       prisma.landingPage.findFirst({
         where: { id: landingPageId, tenantId },
         select: { id: true },
-      })
+      }),
     );
   } else {
     checks.push(Promise.resolve(true));
@@ -90,7 +74,7 @@ async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, lan
       prisma.senderIdentity.findFirst({
         where: { id: senderIdentityId, tenantId },
         select: { id: true },
-      })
+      }),
     );
   } else {
     checks.push(Promise.resolve(true));
@@ -124,75 +108,194 @@ async function resolvePackageCampaignRefs(tenantId, packageId) {
   };
 }
 
-const APP_BASE =
-  (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
+function parseOptionalInt(value, key) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid ${key}`);
+  }
+  return n;
+}
 
-const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || process.env.TRACKING_BASE_URL || APP_BASE).replace(/\/$/, "");
-const SMTP_AUTH_USER = String(
-  process.env.SMTP_USER || process.env.SMTP_AUTH_USER || ""
-).trim().toLowerCase();
+function normalizeLocalActor(input) {
+  return normalizeCampaignActor(input, {
+    source: "phish_local_admin",
+  });
+}
 
-function buildLandingUrl(campaign, campaignUser) {
-  const slug = campaign?.landingPage?.urlSlug || String(campaign.landingPageId || "").trim();
-  const base = PUBLIC_BASE.replace(/\/$/, "");
-  const url = `${base}/lp/${encodeURIComponent(slug)}`;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}t=${encodeURIComponent(campaignUser.trackingToken)}`;
+async function loadGroupWithRecipients(tx, tenantId, groupId) {
+  const group = await tx.group.findFirst({
+    where: { id: groupId, tenantId },
+    include: {
+      members: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              isActive: true,
+              externalUserPublicId: true,
+            },
+          },
+        },
+      },
+      _count: { select: { members: true } },
+    },
+  });
+
+  if (!group) return null;
+
+  const activeUsers = (group.members || [])
+    .map((member) => member.user)
+    .filter((user) => user?.id && user?.isActive);
+
+  return { group, activeUsers };
+}
+
+async function replaceCampaignRecipientsFromGroup(tx, { tenantId, campaignId, groupId }) {
+  const resolved = await loadGroupWithRecipients(tx, tenantId, groupId);
+  if (!resolved) {
+    throw new Error("Group not found");
+  }
+
+  if (!resolved.activeUsers.length) {
+    throw new Error("Target group has no active recipients");
+  }
+
+  await tx.campaign.update({
+    where: { id: campaignId },
+    data: {
+      targetGroupId: groupId,
+      targetType: CampaignTargetType.GROUP,
+      recipientCountSnapshot: resolved.activeUsers.length,
+      source: CampaignSource.LOCAL_ADMIN,
+    },
+  });
+
+  await tx.campaignUser.deleteMany({ where: { campaignId } });
+
+  await tx.campaignUser.createMany({
+    data: resolved.activeUsers.map((user) => ({
+      campaignId,
+      userId: user.id,
+      externalUserPublicId: user.externalUserPublicId || null,
+    })),
+    skipDuplicates: true,
+  });
+
+  return resolved;
+}
+
+function ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(body) {
+  if (body?.userIds !== undefined) {
+    return "userIds are no longer supported; use targetGroupId";
+  }
+  return null;
+}
+
+function validateLifecycleWindow(scheduledAt, cutoffAt) {
+  if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) {
+    throw new Error("Invalid scheduledAt");
+  }
+  if (!(cutoffAt instanceof Date) || Number.isNaN(cutoffAt.getTime())) {
+    throw new Error("Invalid cutoffAt");
+  }
+  if (cutoffAt <= scheduledAt) {
+    throw new Error("cutoffAt must be later than scheduledAt");
+  }
+}
+
+async function resolveCampaignRefsForBody(tenantId, body) {
+  let packageId = null;
+  let emailTemplateId = null;
+  let landingPageId = null;
+  let senderIdentityId = null;
+
+  if (body.packageId !== undefined && body.packageId !== null && body.packageId !== "") {
+    const parsedPackageId = Number(body.packageId);
+    if (!Number.isInteger(parsedPackageId) || parsedPackageId <= 0) {
+      throw new Error("Invalid packageId");
+    }
+
+    const refs = await resolvePackageCampaignRefs(tenantId, parsedPackageId);
+    packageId = refs.packageId;
+    emailTemplateId = refs.emailTemplateId;
+    landingPageId = refs.landingPageId;
+    senderIdentityId = refs.senderIdentityId;
+  } else {
+    emailTemplateId =
+      body.emailTemplateId !== undefined
+        ? parseOptionalInt(body.emailTemplateId, "emailTemplateId")
+        : undefined;
+    landingPageId =
+      body.landingPageId !== undefined
+        ? parseOptionalInt(body.landingPageId, "landingPageId")
+        : undefined;
+    senderIdentityId =
+      body.senderIdentityId !== undefined
+        ? parseOptionalInt(body.senderIdentityId, "senderIdentityId")
+        : undefined;
+
+    await assertCampaignRefsBelongToTenant(tenantId, {
+      emailTemplateId: emailTemplateId === undefined ? null : emailTemplateId,
+      landingPageId: landingPageId === undefined ? null : landingPageId,
+      senderIdentityId: senderIdentityId === undefined ? null : senderIdentityId,
+    });
+  }
+
+  return {
+    packageId,
+    emailTemplateId,
+    landingPageId,
+    senderIdentityId,
+  };
+}
+
+async function readCampaignOr404(tenantId, id, res) {
+  const row = await prisma.campaign.findFirst({
+    where: { id, tenantId },
+    include: campaignAdminInclude,
+  });
+
+  if (!row) {
+    res.status(404).json({ error: "Campaign not found" });
+    return null;
+  }
+
+  return row;
 }
 
 // GET /api/campaigns – seznam kampaní
-router.get('/campaigns', async (_req, res) => {
+router.get("/campaigns", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const rows = await prisma.campaign.findMany({
       where: { tenantId },
-      include: {
-        package: true,
-        emailTemplate: true,
-        landingPage: true,
-        senderIdentity: {
-          include: { senderDomain: true },
-        },
-        targetUsers: { include: { user: true } },
-      },
-      orderBy: { createdAt: 'desc' },
+      include: campaignAdminInclude,
+      orderBy: [{ scheduledAt: "desc" }, { id: "desc" }],
     });
 
     res.json(rows);
-  } catch (e) {
-    console.error('GET /campaigns failed', e);
-    res.status(500).json({ error: e.message || 'Failed to load campaigns' });
+  } catch (error) {
+    console.error("GET /campaigns failed", error);
+    res.status(500).json({ error: error?.message || "Failed to load campaigns" });
   }
 });
 
 // GET /api/campaigns/:id – detail
-router.get('/campaigns/:id', async (req, res) => {
+router.get("/campaigns/:id", async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
-    return res.status(400).json({ error: 'Invalid id' });
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid id" });
   }
 
   try {
     const tenantId = await getTenantId();
-    const row = await prisma.campaign.findFirst({
-      where: { id, tenantId },
-      include: {
-        package: true,
-        emailTemplate: true,
-        landingPage: true,
-        senderIdentity: {
-          include: { senderDomain: true },
-        },
-        targetUsers: { include: { user: true } },
-        interactions: true,
-      },
-    });
-
-    if (!row) return res.status(404).json({ error: 'Campaign not found' });
+    const row = await readCampaignOr404(tenantId, id, res);
+    if (!row) return;
     res.json(row);
-  } catch (e) {
-    console.error('GET /campaigns/:id failed', e);
-    res.status(500).json({ error: e.message || 'Failed to load campaign' });
+  } catch (error) {
+    console.error("GET /campaigns/:id failed", error);
+    res.status(500).json({ error: error?.message || "Failed to load campaign" });
   }
 });
 
@@ -201,79 +304,60 @@ router.post("/campaigns/:id/targets/group", async (req, res) => {
   const campaignId = Number(req.params.id);
   const groupId = Number(req.body?.groupId);
 
-  if (!Number.isInteger(campaignId) || !Number.isInteger(groupId)) {
+  if (!Number.isInteger(campaignId) || campaignId <= 0 || !Number.isInteger(groupId) || groupId <= 0) {
     return res.status(400).json({ error: "Invalid campaignId/groupId" });
   }
 
   try {
     const tenantId = await getTenantId();
-
-    const [campaign, group] = await Promise.all([
-      prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { id: true } }),
-      prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }),
-    ]);
-
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    if (!group) return res.status(404).json({ error: "Group not found" });
-
-    // načti userIds ve skupině
-    const members = await prisma.groupMember.findMany({
-      where: { groupId },
-      select: { userId: true },
+    const actor = normalizeLocalActor(req.body?.actor);
+    const existing = await prisma.campaign.findFirst({
+      where: { id: campaignId, tenantId },
+      select: { id: true },
     });
-    const userIds = members.map((m) => m.userId);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
 
     await prisma.$transaction(async (tx) => {
-      await tx.campaign.update({
-        where: { id: campaignId },
-        data: { targetGroupId: groupId },
+      const resolved = await replaceCampaignRecipientsFromGroup(tx, {
+        tenantId,
+        campaignId,
+        groupId,
       });
 
-      await tx.campaignUser.deleteMany({ where: { campaignId } });
-
-      if (userIds.length) {
-        await tx.campaignUser.createMany({
-          data: userIds.map((userId) => ({ campaignId, userId })),
-          skipDuplicates: true,
-        });
-      }
+      await tx.campaignLifecycleEvent.create({
+        data: buildLifecycleEventData({
+          tenantId,
+          campaignId,
+          type: CampaignLifecycleEventType.UPDATED,
+          actor,
+          reason: "target_group_updated",
+          meta: {
+            targetGroupId: resolved.group.id,
+            recipientCountSnapshot: resolved.activeUsers.length,
+          },
+        }),
+      });
     });
 
-    return res.json({ ok: true, count: userIds.length });
-  } catch (e) {
-    console.error("POST /campaigns/:id/targets/group failed", e);
-    return res.status(500).json({ error: e.message || "Failed" });
+    const row = await prisma.campaign.findFirst({
+      where: { id: campaignId, tenantId },
+      include: campaignAdminInclude,
+    });
+
+    return res.json(row);
+  } catch (error) {
+    console.error("POST /campaigns/:id/targets/group failed", error);
+    return res.status(500).json({ error: error?.message || "Failed to update target group" });
   }
 });
 
 // DELETE /api/campaigns/:id – smazání kampaně
-router.delete('/campaigns/:id', async (req, res) => {
+router.delete("/campaigns/:id", async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
-    return res.status(400).json({ error: 'Invalid id' });
-  }
-
-  try {
-    const tenantId = await getTenantId();
-
-    const existing = await prisma.campaign.findFirst({
-      where: { id, tenantId },
-      select: { id: true },
-    });
-    if (!existing) return res.status(404).json({ error: 'Campaign not found' });
-
-    await prisma.campaign.delete({ where: { id } });
-    return res.status(204).end();
-  } catch (e) {
-    console.error('DELETE /campaigns/:id failed', e);
-    res.status(500).json({ error: e.message || 'Failed to delete campaign' });
-  }
-});
-
-// PATCH /api/campaigns/:id – průběžná konfigurace kampaně (wizard)
-router.patch("/campaigns/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
+  if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: "Invalid id" });
   }
 
@@ -286,374 +370,342 @@ router.patch("/campaigns/:id", async (req, res) => {
     });
     if (!existing) return res.status(404).json({ error: "Campaign not found" });
 
+    await prisma.campaign.delete({ where: { id } });
+    return res.status(204).end();
+  } catch (error) {
+    console.error("DELETE /campaigns/:id failed", error);
+    res.status(500).json({ error: error?.message || "Failed to delete campaign" });
+  }
+});
+
+// PATCH /api/campaigns/:id – průběžná konfigurace kampaně
+router.patch("/campaigns/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
+  if (removedTargetingError) {
+    return res.status(400).json({ error: removedTargetingError });
+  }
+
+  try {
+    const tenantId = await getTenantId();
+    const actor = normalizeLocalActor(req.body?.actor);
+
+    const existing = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        scheduledAt: true,
+        cutoffAt: true,
+        targetGroupId: true,
+        packageId: true,
+        emailTemplateId: true,
+        landingPageId: true,
+        senderIdentityId: true,
+      },
+    });
+
+    if (!existing) return res.status(404).json({ error: "Campaign not found" });
+
     const body = req.body || {};
-    const data = {};
+    const updateData = {};
+    const updatedFields = [];
 
     if (body.name !== undefined) {
-      const v = String(body.name || "").trim();
-      if (!v) return res.status(400).json({ error: "Name is required" });
-      data.name = v;
+      const value = String(body.name || "").trim();
+      if (!value) return res.status(400).json({ error: "Name is required" });
+      updateData.name = value;
+      updatedFields.push("name");
     }
 
     if (body.description !== undefined) {
-      const v = String(body.description || "").trim();
-      data.description = v ? v : null;
+      updateData.description = String(body.description || "").trim() || null;
+      updatedFields.push("description");
     }
+
+    let nextScheduledAt = existing.scheduledAt;
+    let nextCutoffAt = existing.cutoffAt;
 
     if (body.scheduledAt !== undefined) {
-      const d = body.scheduledAt ? new Date(body.scheduledAt) : null;
-      if (d && Number.isNaN(d.getTime())) {
+      nextScheduledAt = parseDateOrNull(body.scheduledAt);
+      if (!(nextScheduledAt instanceof Date)) {
         return res.status(400).json({ error: "Invalid scheduledAt" });
       }
-      if (d) data.scheduledAt = d;
+      updateData.scheduledAt = nextScheduledAt;
+      updatedFields.push("scheduledAt");
     }
 
-    if (body.packageId !== undefined) {
-      if (body.packageId === null || body.packageId === "") {
-        data.packageId = null;
-      } else {
-        const packageId = Number(body.packageId);
-        if (!Number.isInteger(packageId)) {
-          return res.status(400).json({ error: "Invalid packageId" });
-        }
-
-        const packageRefs = await resolvePackageCampaignRefs(tenantId, packageId);
-        data.packageId = packageRefs.packageId;
-        data.emailTemplateId = packageRefs.emailTemplateId;
-        data.landingPageId = packageRefs.landingPageId;
-        data.senderIdentityId = packageRefs.senderIdentityId;
+    if (body.cutoffAt !== undefined) {
+      nextCutoffAt = parseDateOrNull(body.cutoffAt);
+      if (!(nextCutoffAt instanceof Date)) {
+        return res.status(400).json({ error: "Invalid cutoffAt" });
       }
+      updateData.cutoffAt = nextCutoffAt;
+      updatedFields.push("cutoffAt");
+    }
+
+    validateLifecycleWindow(nextScheduledAt, nextCutoffAt);
+
+    const resolvedRefs = await resolveCampaignRefsForBody(tenantId, body);
+
+    if (resolvedRefs.packageId !== undefined && body.packageId !== undefined) {
+      updateData.packageId = resolvedRefs.packageId;
+      updateData.emailTemplateId = resolvedRefs.emailTemplateId;
+      updateData.landingPageId = resolvedRefs.landingPageId;
+      updateData.senderIdentityId = resolvedRefs.senderIdentityId;
+      updatedFields.push("packageId", "emailTemplateId", "landingPageId", "senderIdentityId");
     } else {
-      let tplId;
-      let lpId;
-      let sidId;
-
-      if (body.landingPageId !== undefined) {
-        const v = Number(body.landingPageId);
-        if (!Number.isInteger(v)) {
-          return res.status(400).json({ error: "Invalid landingPageId" });
-        }
-        lpId = v;
-        data.landingPageId = v;
+      if (resolvedRefs.emailTemplateId !== undefined) {
+        updateData.emailTemplateId = resolvedRefs.emailTemplateId;
+        updatedFields.push("emailTemplateId");
       }
-
-      if (body.emailTemplateId !== undefined) {
-        const v = Number(body.emailTemplateId);
-        if (!Number.isInteger(v)) {
-          return res.status(400).json({ error: "Invalid emailTemplateId" });
-        }
-        tplId = v;
-        data.emailTemplateId = v;
+      if (resolvedRefs.landingPageId !== undefined) {
+        updateData.landingPageId = resolvedRefs.landingPageId;
+        updatedFields.push("landingPageId");
       }
-
-      if (body.senderIdentityId !== undefined) {
-        if (body.senderIdentityId === null || body.senderIdentityId === "") {
-          sidId = null;
-          data.senderIdentityId = null;
-        } else {
-          const v = Number(body.senderIdentityId);
-          if (!Number.isInteger(v)) {
-            return res.status(400).json({ error: "Invalid senderIdentityId" });
-          }
-          sidId = v;
-          data.senderIdentityId = v;
-        }
+      if (resolvedRefs.senderIdentityId !== undefined) {
+        updateData.senderIdentityId = resolvedRefs.senderIdentityId;
+        updatedFields.push("senderIdentityId");
       }
-
-      await assertCampaignRefsBelongToTenant(tenantId, {
-        emailTemplateId: tplId,
-        landingPageId: lpId,
-        senderIdentityId: sidId,
-      });
     }
 
-    if (body.userIds !== undefined) {
-      if (!Array.isArray(body.userIds)) {
-        return res.status(400).json({ error: "userIds must be an array" });
-      }
+    const targetGroupId =
+      body.targetGroupId !== undefined
+        ? parseOptionalInt(body.targetGroupId, "targetGroupId")
+        : undefined;
 
-      const userIds = body.userIds
-        .map((x) => Number(x))
-        .filter((x) => Number.isInteger(x) && x > 0);
-
-      data.targetUsers = {
-        deleteMany: {},
-        create: userIds.map((uid) => ({ userId: uid })),
-      };
-    }
-
-    if (Object.keys(data).length === 0) {
-      const row = await prisma.campaign.findFirst({
-        where: { id, tenantId },
-        include: {
-          package: true,
-          emailTemplate: true,
-          landingPage: true,
-          senderIdentity: { include: { senderDomain: true } },
-          targetUsers: { include: { user: true } },
-          interactions: true,
-        },
-      });
+    if (!Object.keys(updateData).length && targetGroupId === undefined) {
+      const row = await readCampaignOr404(tenantId, id, res);
+      if (!row) return;
       return res.json(row);
     }
 
-    await prisma.campaign.update({
-      where: { id },
-      data,
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(updateData).length) {
+        await tx.campaign.update({
+          where: { id },
+          data: {
+            ...updateData,
+            source: CampaignSource.LOCAL_ADMIN,
+          },
+        });
+      }
+
+      if (targetGroupId !== undefined) {
+        const resolved = await replaceCampaignRecipientsFromGroup(tx, {
+          tenantId,
+          campaignId: id,
+          groupId: targetGroupId,
+        });
+        updatedFields.push("targetGroupId", "recipientCountSnapshot");
+        updateData.targetGroupId = resolved.group.id;
+        updateData.recipientCountSnapshot = resolved.activeUsers.length;
+      }
+
+      await tx.campaignLifecycleEvent.create({
+        data: buildLifecycleEventData({
+          tenantId,
+          campaignId: id,
+          type: CampaignLifecycleEventType.UPDATED,
+          actor,
+          reason: "campaign_updated",
+          meta: {
+            fields: [...new Set(updatedFields)],
+          },
+        }),
+      });
     });
 
     const row = await prisma.campaign.findFirst({
       where: { id, tenantId },
-      include: {
-        package: true,
-        emailTemplate: true,
-        landingPage: true,
-        senderIdentity: { include: { senderDomain: true } },
-        targetUsers: { include: { user: true } },
-        interactions: true,
-      },
+      include: campaignAdminInclude,
     });
 
     res.json(row);
-  } catch (e) {
-    console.error("PATCH /campaigns/:id failed", e);
-    res.status(500).json({ error: e.message || "Failed to update campaign" });
+  } catch (error) {
+    console.error("PATCH /campaigns/:id failed", error);
+    res.status(500).json({ error: error?.message || "Failed to update campaign" });
   }
 });
 
-// POST /api/campaigns – vytvoření kampaně (minimálně jen name + description)
+// POST /api/campaigns – vytvoření kampaně
 router.post("/campaigns", async (req, res) => {
-  const {
-    name,
-    description,
-    scheduledAt,
-    packageId,
-    emailTemplateId,
-    landingPageId,
-    senderIdentityId,
-    userIds,
-  } = req.body || {};
-
-  const n = String(name || "").trim();
-  if (!n) {
-    return res.status(400).json({ error: "Name is required" });
+  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
+  if (removedTargetingError) {
+    return res.status(400).json({ error: removedTargetingError });
   }
-
-  if (userIds !== undefined && !Array.isArray(userIds)) {
-    return res.status(400).json({ error: "userIds must be an array" });
-  }
-
-  const sched = scheduledAt ? new Date(scheduledAt) : new Date();
-  if (sched && Number.isNaN(sched.getTime())) {
-    return res.status(400).json({ error: "Invalid scheduledAt" });
-  }
-
-  const parseOptionalInt = (v, key) => {
-    if (v === undefined || v === null || v === "") return null;
-    const num = Number(v);
-    if (!Number.isInteger(num)) throw new Error(`Invalid ${key}`);
-    return num;
-  };
 
   try {
     const tenantId = await getTenantId();
+    const actor = normalizeLocalActor(req.body?.actor);
 
-    let resolvedPackageId = null;
-    let tplId = null;
-    let lpId = null;
-    let sidId = null;
+    const name = String(req.body?.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ error: "Name is required" });
+    }
 
-    if (packageId !== undefined && packageId !== null && packageId !== "") {
-      const parsedPackageId = Number(packageId);
-      if (!Number.isInteger(parsedPackageId)) {
-        return res.status(400).json({ error: "Invalid packageId" });
+    const scheduledAt = parseDateOrNull(req.body?.scheduledAt);
+    const cutoffAt = parseDateOrNull(req.body?.cutoffAt);
+    const targetGroupId = parseOptionalInt(req.body?.targetGroupId, "targetGroupId");
+
+    validateLifecycleWindow(scheduledAt, cutoffAt);
+
+    if (!targetGroupId) {
+      return res.status(400).json({ error: "targetGroupId is required" });
+    }
+
+    const resolvedRefs = await resolveCampaignRefsForBody(tenantId, req.body || {});
+
+    const created = await prisma.$transaction(async (tx) => {
+      const resolvedGroup = await loadGroupWithRecipients(tx, tenantId, targetGroupId);
+      if (!resolvedGroup) {
+        throw new Error("Group not found");
+      }
+      if (!resolvedGroup.activeUsers.length) {
+        throw new Error("Target group has no active recipients");
       }
 
-      const packageRefs = await resolvePackageCampaignRefs(tenantId, parsedPackageId);
-      resolvedPackageId = packageRefs.packageId;
-      tplId = packageRefs.emailTemplateId;
-      lpId = packageRefs.landingPageId;
-      sidId = packageRefs.senderIdentityId;
-    } else {
-      try {
-        tplId = parseOptionalInt(emailTemplateId, "emailTemplateId");
-        lpId = parseOptionalInt(landingPageId, "landingPageId");
-        sidId = parseOptionalInt(senderIdentityId, "senderIdentityId");
-      } catch (e) {
-        return res.status(400).json({ error: e.message });
-      }
-
-      await assertCampaignRefsBelongToTenant(tenantId, {
-        emailTemplateId: tplId,
-        landingPageId: lpId,
-        senderIdentityId: sidId,
+      return tx.campaign.create({
+        data: {
+          tenantId,
+          name,
+          description: String(req.body?.description || "").trim() || null,
+          scheduledAt,
+          cutoffAt,
+          status: CampaignStatus.SCHEDULED,
+          source: CampaignSource.LOCAL_ADMIN,
+          targetType: CampaignTargetType.GROUP,
+          recipientCountSnapshot: resolvedGroup.activeUsers.length,
+          packageId: resolvedRefs.packageId ?? null,
+          emailTemplateId:
+            resolvedRefs.emailTemplateId === undefined ? null : resolvedRefs.emailTemplateId,
+          landingPageId:
+            resolvedRefs.landingPageId === undefined ? null : resolvedRefs.landingPageId,
+          senderIdentityId:
+            resolvedRefs.senderIdentityId === undefined ? null : resolvedRefs.senderIdentityId,
+          targetGroupId: resolvedGroup.group.id,
+          targetUsers: {
+            create: resolvedGroup.activeUsers.map((user) => ({
+              userId: user.id,
+              externalUserPublicId: user.externalUserPublicId || null,
+            })),
+          },
+          lifecycleEvents: {
+            create: [
+              buildLifecycleEventData({
+                tenantId,
+                type: CampaignLifecycleEventType.CREATED,
+                actor,
+                reason: "created_via_local_admin",
+                meta: {
+                  targetGroupId: resolvedGroup.group.id,
+                  recipientCountSnapshot: resolvedGroup.activeUsers.length,
+                },
+              }),
+              buildLifecycleEventData({
+                tenantId,
+                type: CampaignLifecycleEventType.SCHEDULED,
+                actor,
+                reason: "scheduled_via_local_admin",
+                meta: {
+                  scheduledAt: scheduledAt.toISOString(),
+                  cutoffAt: cutoffAt.toISOString(),
+                },
+              }),
+            ],
+          },
+        },
+        include: campaignAdminInclude,
       });
-    }
-
-    const data = {
-      tenantId,
-      name: n,
-      description: String(description || "").trim() || null,
-      scheduledAt: sched,
-      status: CampaignStatus.SCHEDULED,
-      packageId: resolvedPackageId,
-      emailTemplateId: tplId,
-      landingPageId: lpId,
-      senderIdentityId: sidId,
-    };
-
-    if (Array.isArray(userIds) && userIds.length > 0) {
-      const ids = userIds
-        .map((x) => Number(x))
-        .filter((x) => Number.isInteger(x) && x > 0);
-
-      if (ids.length > 0) {
-        data.targetUsers = {
-          create: ids.map((uid) => ({ userId: uid })),
-        };
-      }
-    }
-
-    const created = await prisma.campaign.create({
-      data,
-      include: {
-        package: true,
-        emailTemplate: true,
-        landingPage: true,
-        senderIdentity: { include: { senderDomain: true } },
-        targetUsers: { include: { user: true } },
-      },
     });
 
     res.status(201).json(created);
-  } catch (e) {
-    console.error("POST /campaigns failed", e);
-    res.status(500).json({ error: e.message || "Failed to create campaign" });
+  } catch (error) {
+    console.error("POST /campaigns failed", error);
+    res.status(500).json({ error: error?.message || "Failed to create campaign" });
   }
 });
 
-// pomocná funkce – odeslání mailů a zapsání EMAIL_SENT
-async function sendCampaignEmails(campaignId, tenantId) {
-  const sendPolicy = await buildSendPolicy(tenantId);
-  const campaign = await prisma.campaign.findFirst({
-    where: { id: campaignId, tenantId },
-    include: {
-      emailTemplate: true,
-      landingPage: true, // ✅ nutné pro urlSlug
-      senderIdentity: {
-        include: { senderDomain: true },
-      },
-      targetUsers: { include: { user: true } },
-    },
-  });
-  if (!campaign.targetUsers?.length) {
-    throw new Error("Campaign has no recipients (targetUsers is empty).");
-  }
-  if (!campaign) throw new Error("Campaign not found");
-  if (!campaign.emailTemplate) throw new Error("Campaign is missing emailTemplate");
-  if (!campaign.landingPage) throw new Error("Campaign is missing landingPage");
-  if (!campaign.senderIdentity) throw new Error("Campaign is missing senderIdentity");
-
-  const now = new Date();
-
-  let from;
-  let replyTo;
-
-  // AUTH mailbox (jeden stabilní login účet)
-  const smtpUser = String(process.env.SMTP_USER || "").trim().toLowerCase();
-  if (!smtpUser) {
-    throw new Error("SMTP_USER is missing in env (auth mailbox).");
-  }
-
-  if (campaign.senderIdentity) {
-    const local = campaign.senderIdentity.localPart;
-    const domain = campaign.senderIdentity.senderDomain?.domain;
-    const fromEmail = local && domain ? `${local}@${domain}` : null;
-
-    if (fromEmail) {
-      const fromName = campaign.senderIdentity.fromName || fromEmail;
-      from = `${fromName} <${fromEmail}>`;
-    }
-
-    if (campaign.senderIdentity.replyTo) {
-      replyTo = campaign.senderIdentity.replyTo;
-    }
-  }
-
-  if (!from) {
-    throw new Error("Sender identity is required (from address is missing).");
-  }
-
-  for (const cu of campaign.targetUsers) {
-    const userName = cu.user.fullName || cu.user.email;
-    const landingUrl = buildLandingUrl(campaign, cu);
-
-    // 1) doplnit placeholdery do HTML
-    const htmlRendered = renderEmailTemplate(campaign.emailTemplate.bodyHtml, {
-      name: userName,
-      email: cu.user.email,
-      link: landingUrl,
-    });
-
-    // 2) přidat tracking pixel + přepsat odkazy
-    const htmlTracked = instrumentEmailHtml(htmlRendered, cu.trackingToken);
-
-    // 3) odeslat e-mail
-    const info = await sendMail({
-      smtpUser, // <- klíčové pro výběr 1 ze 4 mailboxů
-      from,
-      replyTo,
-      to: cu.user.email,
-      subject: campaign.emailTemplate.subject,
-      html: htmlTracked,
-      policy: sendPolicy,
-    });
-    
-    // 4) zapsat EMAIL_SENT + agregace
-    await prisma.$transaction([
-      prisma.interaction.create({
-        data: {
-          campaignId: campaign.id,
-          userId: cu.userId,
-          campaignUserId: cu.id,
-          type: InteractionType.EMAIL_SENT,
-        },
-      }),
-      prisma.campaignUser.update({
-        where: { id: cu.id },
-        data: {
-          delivered: true,
-          sentAt: now,
-        },
-      }),
-    ]);
-  }
-
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: { status: CampaignStatus.ACTIVE },
-  });
-}
-
 // POST /api/campaigns/:id/send-now – okamžité odeslání kampaně
-router.post('/campaigns/:id/send-now', async (req, res) => {
-  /*
-  if (process.env.EMAIL_SENDING_ENABLED !== "true") {
-    return res.status(403).json({ error: "Email sending je vypnuté (EMAIL_SENDING_ENABLED=false)." });
-  }
-  */
+router.post("/campaigns/:id/send-now", async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
-    return res.status(400).json({ error: 'Invalid id' });
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid id" });
   }
 
   try {
     const tenantId = await getTenantId();
-    const result = await sendCampaignNow(id, tenantId);
+    const actor = normalizeLocalActor(req.body?.actor);
+    const result = await sendCampaignNow(id, tenantId, {
+      source: CampaignSource.LOCAL_ADMIN,
+      actor,
+    });
     res.json(result);
-  } catch (e) {
-    console.error('POST /campaigns/:id/send-now failed', e);
-    res.status(500).json({ error: e.message || 'Failed to send campaign' });
+  } catch (error) {
+    console.error("POST /campaigns/:id/send-now failed", error);
+    res.status(500).json({ error: error?.message || "Failed to send campaign" });
+  }
+});
+
+// POST /api/campaigns/:id/cancel – ruční ukončení/stop kampaně
+router.post("/campaigns/:id/cancel", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  try {
+    const tenantId = await getTenantId();
+    const actor = normalizeLocalActor(req.body?.actor);
+    const reason = String(req.body?.reason || "").trim() || "cancelled_via_local_admin";
+    const now = new Date();
+
+    const existing = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true },
+    });
+
+    if (!existing) return res.status(404).json({ error: "Campaign not found" });
+    if (existing.status === CampaignStatus.CANCELLED) {
+      const row = await readCampaignOr404(tenantId, id, res);
+      if (!row) return;
+      return res.json(row);
+    }
+    if (!canCancelCampaign(existing.status)) {
+      return res.status(409).json({ error: "Campaign cannot be cancelled in current state" });
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id },
+      data: {
+        status: CampaignStatus.CANCELLED,
+        cancelledAt: now,
+        statusReason: reason,
+        finishReason: reason,
+        source: CampaignSource.LOCAL_ADMIN,
+        lifecycleEvents: {
+          create: buildLifecycleEventData({
+            tenantId,
+            type: CampaignLifecycleEventType.CANCELLED,
+            actor,
+            reason,
+            meta: { previousStatus: existing.status },
+            createdAt: now,
+          }),
+        },
+      },
+      include: campaignAdminInclude,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("POST /campaigns/:id/cancel failed", error);
+    res.status(500).json({ error: error?.message || "Failed to cancel campaign" });
   }
 });
 

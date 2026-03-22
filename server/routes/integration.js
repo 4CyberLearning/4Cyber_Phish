@@ -1,5 +1,20 @@
 import express from "express";
+import {
+  CampaignLifecycleEventType,
+  CampaignSource,
+  CampaignStatus,
+  CampaignTargetType,
+} from "@prisma/client";
 import prisma from "../db/prisma.js";
+import {
+  buildCampaignName,
+  buildLifecycleEventData,
+  campaignIntegrationInclude,
+  canCancelCampaign,
+  normalizeCampaignActor,
+  parseDateOrNull,
+  serializeCampaignForIntegration,
+} from "../services/campaignLifecycle.js";
 
 const router = express.Router();
 
@@ -485,95 +500,218 @@ router.get("/packages/:id", async (req, res) => {
   }
 });
 
+router.get("/campaigns", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const items = await prisma.campaign.findMany({
+      where: { tenantId },
+      include: campaignIntegrationInclude,
+      orderBy: [{ scheduledAt: "desc" }, { id: "desc" }],
+      take: 100,
+    });
+
+    res.json({ items: items.map(serializeCampaignForIntegration) });
+  } catch (err) {
+    console.error("GET /api/integration/campaigns error", err);
+    res.status(500).json({ error: err?.message || "Failed to load campaigns" });
+  }
+});
+
+router.get("/campaigns/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+
+    const row = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      include: campaignIntegrationInclude,
+    });
+
+    if (!row) return res.status(404).json({ error: "Campaign not found" });
+    res.json(serializeCampaignForIntegration(row));
+  } catch (err) {
+    console.error("GET /api/integration/campaigns/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to load campaign" });
+  }
+});
+
 router.post("/campaigns", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const packageId = Number(req.body?.packageId);
-    const scheduledAt = req.body?.scheduledAt ? new Date(req.body.scheduledAt) : null;
-    const targetMode = String(req.body?.targetMode || "group").toLowerCase();
+    const scheduledAt = parseDateOrNull(req.body?.scheduledAt);
+    const cutoffAt = parseDateOrNull(req.body?.cutoffAt);
     const targetGroupId = req.body?.targetGroupId != null && req.body?.targetGroupId !== ""
       ? Number(req.body.targetGroupId)
       : null;
-    const userPublicIds = Array.isArray(req.body?.userPublicIds)
-      ? req.body.userPublicIds.map((item) => String(item || "").trim()).filter(Boolean)
-      : [];
-    const name = String(req.body?.name || "").trim();
     const description = String(req.body?.description || "").trim() || null;
     const audienceName = String(req.body?.audienceName || "").trim() || null;
+    const actor = normalizeCampaignActor(req.body?.actor, {
+      source: "city_integration",
+    });
 
     if (!Number.isInteger(packageId) || packageId <= 0) return res.status(400).json({ error: "Invalid packageId" });
-    if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return res.status(400).json({ error: "Invalid scheduledAt" });
-    if (!["group", "users"].includes(targetMode)) return res.status(400).json({ error: "Invalid targetMode" });
+    if (!(scheduledAt instanceof Date)) return res.status(400).json({ error: "Invalid scheduledAt" });
+    if (!(cutoffAt instanceof Date)) return res.status(400).json({ error: "Invalid cutoffAt" });
+    if (cutoffAt <= scheduledAt) return res.status(400).json({ error: "cutoffAt must be later than scheduledAt" });
+    if (!Number.isInteger(targetGroupId) || targetGroupId <= 0) return res.status(400).json({ error: "Invalid targetGroupId" });
 
-    const pkg = await prisma.campaignPackage.findFirst({
-      where: { id: packageId, tenantId, isActive: true, isApproved: true },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        emailTemplateId: true,
-        landingPageId: true,
-        senderIdentityId: true,
-      },
-    });
-    if (!pkg) return res.status(404).json({ error: "Package not found" });
-
-    let targetGroup = null;
-    let users = [];
-
-    if (targetMode === "group") {
-      if (!Number.isInteger(targetGroupId) || targetGroupId <= 0) return res.status(400).json({ error: "Invalid targetGroupId" });
-      targetGroup = await prisma.group.findFirst({
-        where: { id: targetGroupId, tenantId },
-        include: { members: { include: { user: true } } },
-      });
-      if (!targetGroup) return res.status(404).json({ error: "Group not found" });
-      users = (targetGroup.members || []).map((item) => item.user).filter((user) => user?.id && user?.isActive);
-    } else {
-      users = await prisma.user.findMany({
-        where: {
-          tenantId,
-          externalUserPublicId: { in: userPublicIds },
-          isActive: true,
+    const [pkg, targetGroup] = await Promise.all([
+      prisma.campaignPackage.findFirst({
+        where: { id: packageId, tenantId, isActive: true, isApproved: true },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          emailTemplateId: true,
+          landingPageId: true,
+          senderIdentityId: true,
         },
-      });
-      if (!users.length) return res.status(400).json({ error: "No recipients found" });
+      }),
+      prisma.group.findFirst({
+        where: { id: targetGroupId, tenantId },
+        include: {
+          members: {
+            include: { user: true },
+          },
+          _count: { select: { members: true } },
+        },
+      }),
+    ]);
+
+    if (!pkg) return res.status(404).json({ error: "Package not found" });
+    if (!targetGroup) return res.status(404).json({ error: "Group not found" });
+
+    const users = (targetGroup.members || [])
+      .map((item) => item.user)
+      .filter((user) => user?.id && user?.isActive);
+
+    if (!users.length) {
+      return res.status(400).json({ error: "Target group has no active recipients" });
     }
 
     const created = await prisma.campaign.create({
       data: {
         tenantId,
-        name: name || `${pkg.name}${audienceName ? ` · ${audienceName}` : ""}`,
+        name: buildCampaignName({
+          name: req.body?.name,
+          packageName: pkg.name,
+          audienceName,
+        }),
         description: description || pkg.description || null,
         scheduledAt,
+        cutoffAt,
+        status: CampaignStatus.SCHEDULED,
+        source: CampaignSource.INTEGRATION,
+        targetType: CampaignTargetType.GROUP,
+        recipientCountSnapshot: users.length,
         packageId: pkg.id,
         emailTemplateId: pkg.emailTemplateId,
         landingPageId: pkg.landingPageId,
         senderIdentityId: pkg.senderIdentityId,
-        targetGroupId: targetGroup?.id || null,
+        targetGroupId: targetGroup.id,
         targetUsers: {
           create: users.map((user) => ({
             userId: user.id,
             externalUserPublicId: user.externalUserPublicId || null,
           })),
         },
+        lifecycleEvents: {
+          create: [
+            buildLifecycleEventData({
+              tenantId,
+              type: CampaignLifecycleEventType.CREATED,
+              actor,
+              reason: "created_via_integration",
+              meta: {
+                packageId: pkg.id,
+                targetGroupId: targetGroup.id,
+                recipientCountSnapshot: users.length,
+              },
+            }),
+            buildLifecycleEventData({
+              tenantId,
+              type: CampaignLifecycleEventType.SCHEDULED,
+              actor,
+              reason: "scheduled_via_integration",
+              meta: {
+                scheduledAt: scheduledAt.toISOString(),
+                cutoffAt: cutoffAt.toISOString(),
+              },
+            }),
+          ],
+        },
       },
-      include: {
-        package: true,
-        emailTemplate: true,
-        landingPage: true,
-        senderIdentity: { include: { senderDomain: true } },
-        targetGroup: true,
-        targetUsers: { include: { user: true } },
-      },
+      include: campaignIntegrationInclude,
     });
 
-    res.status(201).json(created);
+    res.status(201).json(serializeCampaignForIntegration(created));
   } catch (err) {
     console.error("POST /api/integration/campaigns error", err);
     res.status(500).json({ error: err?.message || "Failed to create campaign" });
+  }
+});
+
+router.post("/campaigns/:id/cancel", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+
+    const actor = normalizeCampaignActor(req.body?.actor, {
+      source: "city_integration",
+    });
+    const reason = String(req.body?.reason || "").trim() || "cancelled_via_integration";
+    const now = new Date();
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { id, tenantId },
+      include: campaignIntegrationInclude,
+    });
+
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status === CampaignStatus.CANCELLED) {
+      return res.json(serializeCampaignForIntegration(campaign));
+    }
+    if (!canCancelCampaign(campaign.status)) {
+      return res.status(409).json({ error: "Campaign cannot be cancelled in current state" });
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id },
+      data: {
+        status: CampaignStatus.CANCELLED,
+        cancelledAt: now,
+        statusReason: reason,
+        finishReason: reason,
+        source: CampaignSource.INTEGRATION,
+        lifecycleEvents: {
+          create: buildLifecycleEventData({
+            tenantId,
+            type: CampaignLifecycleEventType.CANCELLED,
+            actor,
+            reason,
+            meta: { previousStatus: campaign.status },
+            createdAt: now,
+          }),
+        },
+      },
+      include: campaignIntegrationInclude,
+    });
+
+    res.json(serializeCampaignForIntegration(updated));
+  } catch (err) {
+    console.error("POST /api/integration/campaigns/:id/cancel error", err);
+    res.status(500).json({ error: err?.message || "Failed to cancel campaign" });
   }
 });
 

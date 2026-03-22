@@ -1,6 +1,6 @@
-// server/routes/campaignReports.js
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { serializeLifecycleEvent } from "../services/campaignLifecycle.js";
 
 const router = Router();
 
@@ -23,6 +23,10 @@ async function getTenantId() {
   return tenant.id;
 }
 
+function toIso(value) {
+  return value?.toISOString?.() || value || null;
+}
+
 // GET /api/campaigns/:id/report
 router.get("/campaigns/:id/report", async (req, res) => {
   try {
@@ -36,13 +40,24 @@ router.get("/campaigns/:id/report", async (req, res) => {
     const campaign = await prisma.campaign.findFirst({
       where: { id, tenantId },
       include: {
+        package: true,
         emailTemplate: true,
         landingPage: true,
         senderIdentity: {
           include: { senderDomain: true },
         },
+        targetGroup: {
+          include: {
+            _count: { select: { members: true } },
+          },
+        },
         targetUsers: {
           include: { user: true },
+          orderBy: { id: "asc" },
+        },
+        lifecycleEvents: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
         },
       },
     });
@@ -51,27 +66,57 @@ router.get("/campaigns/:id/report", async (req, res) => {
       return res.status(404).json({ error: "Campaign not found" });
     }
 
-    const total = campaign.targetUsers.length;
+    const total = Number(campaign.recipientCountSnapshot || campaign.targetUsers.length || 0);
     const count = (fn) => campaign.targetUsers.filter(fn).length;
-    const rate = (value) =>
-      total > 0 ? Math.round((value / total) * 100) : 0;
+    const rate = (value, base = total) =>
+      base > 0 ? Math.round((value / base) * 10000) / 100 : 0;
 
     const sent = count((cu) => cu.sentAt);
+    const delivered = count((cu) => cu.delivered);
     const opened = count((cu) => cu.openedAt);
     const clicked = count((cu) => cu.clickedAt);
     const submitted = count((cu) => cu.submittedAt);
     const reported = count((cu) => cu.reportedAt);
+    const bounced = Math.max(0, sent - delivered);
+    const submitEligible = delivered;
+
+    const senderDomain = campaign.senderIdentity?.senderDomain?.domain || "";
+    const senderEmail =
+      campaign.senderIdentity?.localPart && senderDomain
+        ? `${campaign.senderIdentity.localPart}@${senderDomain}`
+        : "";
 
     res.json({
       id: campaign.id,
+      tenantId: campaign.tenantId,
       name: campaign.name,
-      description: campaign.description,
+      description: campaign.description || "",
       status: campaign.status,
-      scheduledAt: campaign.scheduledAt,
+      source: campaign.source,
+      targetType: campaign.targetType,
+      statusReason: campaign.statusReason || null,
+      finishReason: campaign.finishReason || null,
+      scheduledAt: toIso(campaign.scheduledAt),
+      cutoffAt: toIso(campaign.cutoffAt),
+      startedAt: toIso(campaign.startedAt),
+      finishedAt: toIso(campaign.finishedAt),
+      cancelledAt: toIso(campaign.cancelledAt),
+      createdAt: toIso(campaign.createdAt),
+      updatedAt: toIso(campaign.updatedAt),
+      recipientCountSnapshot: total,
+
+      package: campaign.package && {
+        id: campaign.package.id,
+        name: campaign.package.name,
+        description: campaign.package.description || "",
+        category: campaign.package.category || "",
+        difficulty: campaign.package.difficulty ?? 1,
+      },
 
       emailTemplate: campaign.emailTemplate && {
         id: campaign.emailTemplate.id,
         name: campaign.emailTemplate.name,
+        subject: campaign.emailTemplate.subject,
       },
 
       landingPage: campaign.landingPage && {
@@ -82,41 +127,57 @@ router.get("/campaigns/:id/report", async (req, res) => {
 
       senderIdentity: campaign.senderIdentity && {
         id: campaign.senderIdentity.id,
+        name: campaign.senderIdentity.name,
         fromName: campaign.senderIdentity.fromName,
-        localPart: campaign.senderIdentity.localPart,
-        replyTo: campaign.senderIdentity.replyTo,
+        email: senderEmail,
+        replyTo: campaign.senderIdentity.replyTo || senderEmail,
         senderDomain: campaign.senderIdentity.senderDomain && {
           id: campaign.senderIdentity.senderDomain.id,
           domain: campaign.senderIdentity.senderDomain.domain,
         },
       },
 
+      targetGroup: campaign.targetGroup && {
+        id: campaign.targetGroup.id,
+        name: campaign.targetGroup.name,
+        description: campaign.targetGroup.description || "",
+        memberCount: Number(campaign.targetGroup._count?.members || 0),
+      },
+
       metrics: {
         totalRecipients: total,
         sent,
+        delivered,
         opened,
         clicked,
         submitted,
         reported,
+        bounced,
+        submitEligible,
         sentRate: rate(sent),
-        openRate: rate(opened),
-        clickRate: rate(clicked),
-        submitRate: rate(submitted),
-        reportRate: rate(reported),
+        deliveryRate: rate(delivered),
+        openRate: rate(opened, delivered || total),
+        clickRate: rate(clicked, delivered || total),
+        submitRate: rate(submitted, submitEligible || total),
+        reportRate: rate(reported, delivered || total),
       },
+
+      lifecycleEvents: campaign.lifecycleEvents.map(serializeLifecycleEvent),
 
       recipients: campaign.targetUsers.map((cu) => ({
         id: cu.id,
         userId: cu.userId,
+        userPublicId: cu.user?.externalUserPublicId || cu.externalUserPublicId || null,
         email: cu.user?.email || null,
         fullName: cu.user?.fullName || null,
         department: cu.user?.department || null,
         role: cu.user?.role || null,
-        sentAt: cu.sentAt,
-        openedAt: cu.openedAt,
-        clickedAt: cu.clickedAt,
-        submittedAt: cu.submittedAt,
-        reportedAt: cu.reportedAt,
+        delivered: !!cu.delivered,
+        sentAt: toIso(cu.sentAt),
+        openedAt: toIso(cu.openedAt),
+        clickedAt: toIso(cu.clickedAt),
+        submittedAt: toIso(cu.submittedAt),
+        reportedAt: toIso(cu.reportedAt),
       })),
     });
   } catch (err) {

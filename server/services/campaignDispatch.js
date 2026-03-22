@@ -1,7 +1,13 @@
-import { CampaignStatus, InteractionType } from "@prisma/client";
+import {
+  CampaignLifecycleEventType,
+  CampaignSource,
+  CampaignStatus,
+  InteractionType,
+} from "@prisma/client";
 import prisma from "../db/prisma.js";
 import { sendMail } from "../utils/mailer.js";
 import { instrumentEmailHtml, renderEmailTemplate } from "../utils/emailTracking.js";
+import { buildLifecycleEventData } from "./campaignLifecycle.js";
 
 function toSet(value) {
   if (!value) return new Set();
@@ -46,9 +52,66 @@ function buildLandingUrl(campaign, campaignUser) {
   return `${url}${sep}t=${encodeURIComponent(campaignUser.trackingToken)}`;
 }
 
-export async function sendCampaignNow(campaignId, tenantId) {
+async function ensureCampaignRunning(campaign, source = CampaignSource.SCHEDULER, actor = { source: "scheduler" }) {
+  const now = new Date();
+
+  if (campaign.status === CampaignStatus.RUNNING) return campaign;
+  if (campaign.status === CampaignStatus.CANCELLED) throw new Error("Campaign is cancelled.");
+  if (campaign.status === CampaignStatus.FINISHED) throw new Error("Campaign is already finished.");
+  if (campaign.cutoffAt && new Date(campaign.cutoffAt) <= now) {
+    throw new Error("Campaign cutoffAt is in the past.");
+  }
+
+  const claimed = await prisma.campaign.updateMany({
+    where: {
+      id: campaign.id,
+      tenantId: campaign.tenantId,
+      status: CampaignStatus.SCHEDULED,
+    },
+    data: {
+      status: CampaignStatus.RUNNING,
+      startedAt: campaign.startedAt || now,
+      statusReason: source === CampaignSource.SCHEDULER ? "started_by_scheduler" : "started_manually",
+      source,
+    },
+  });
+
+  if (claimed.count) {
+    await prisma.campaignLifecycleEvent.create({
+      data: buildLifecycleEventData({
+        tenantId: campaign.tenantId,
+        campaignId: campaign.id,
+        type: CampaignLifecycleEventType.STARTED,
+        actor,
+        reason: source === CampaignSource.SCHEDULER ? "scheduled_at_reached" : "send_now",
+        meta: { source },
+        createdAt: now,
+      }),
+    });
+  }
+
+  return prisma.campaign.findFirst({
+    where: { id: campaign.id, tenantId: campaign.tenantId },
+    include: {
+      emailTemplate: true,
+      landingPage: true,
+      senderIdentity: {
+        include: { senderDomain: true },
+      },
+      targetUsers: {
+        where: { sentAt: null },
+        include: { user: true },
+      },
+    },
+  });
+}
+
+export async function sendCampaignNow(campaignId, tenantId, options = {}) {
+  const source = options.source || CampaignSource.SCHEDULER;
+  const actor = options.actor || { source: source === CampaignSource.SCHEDULER ? "scheduler" : "local_admin" };
   const sendPolicy = await buildSendPolicy(tenantId);
-  const campaign = await prisma.campaign.findFirst({
+
+  let campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, tenantId },
     include: {
       emailTemplate: true,
@@ -64,6 +127,8 @@ export async function sendCampaignNow(campaignId, tenantId) {
   });
 
   if (!campaign) throw new Error("Campaign not found");
+  campaign = await ensureCampaignRunning(campaign, source, actor);
+  if (!campaign) throw new Error("Campaign not found after transition");
   if (!campaign.emailTemplate) throw new Error("Campaign is missing emailTemplate");
   if (!campaign.landingPage) throw new Error("Campaign is missing landingPage");
   if (!campaign.senderIdentity) throw new Error("Campaign is missing senderIdentity");
@@ -72,10 +137,6 @@ export async function sendCampaignNow(campaignId, tenantId) {
   if (!totalRecipients) throw new Error("Campaign has no recipients (targetUsers is empty).");
 
   if (!campaign.targetUsers?.length) {
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { status: CampaignStatus.ACTIVE },
-    });
     return { ok: true, campaignId: campaign.id, sent: 0, skippedAlreadySent: totalRecipients };
   }
 
@@ -138,11 +199,6 @@ export async function sendCampaignNow(campaignId, tenantId) {
 
     sent += 1;
   }
-
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: { status: CampaignStatus.ACTIVE },
-  });
 
   return { ok: true, campaignId: campaign.id, sent, skippedAlreadySent: totalRecipients - sent };
 }

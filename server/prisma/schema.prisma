@@ -13,10 +13,38 @@ datasource db {
  */
 
 enum CampaignStatus {
+  DRAFT
   SCHEDULED
-  ACTIVE
+  RUNNING
   FINISHED
-  CANCELED
+  CANCELLED
+}
+
+enum CampaignSource {
+  UNKNOWN
+  LOCAL_ADMIN
+  INTEGRATION
+  SCHEDULER
+}
+
+enum CampaignTargetType {
+  GROUP
+  USER_LIST
+}
+
+enum CampaignLifecycleEventType {
+  CREATED
+  SCHEDULED
+  STARTED
+  FINISHED
+  CANCELLED
+  UPDATED
+}
+
+enum CampaignActorType {
+  SYSTEM
+  INTEGRATION
+  USER
 }
 
 enum InteractionType {
@@ -46,6 +74,7 @@ model Tenant {
   users                   User[]
   groups                  Group[]
   campaigns               Campaign[]
+  campaignLifecycleEvents CampaignLifecycleEvent[]
   packages                CampaignPackage[]
   templates               EmailTemplate[]
   landingPages            LandingPage[]
@@ -256,7 +285,16 @@ model Campaign {
   name        String
   description String?
   scheduledAt DateTime
-  status      CampaignStatus @default(SCHEDULED)
+  cutoffAt    DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  cancelledAt DateTime?
+  status      CampaignStatus    @default(SCHEDULED)
+  source      CampaignSource    @default(UNKNOWN)
+  targetType  CampaignTargetType @default(GROUP)
+  recipientCountSnapshot Int    @default(0)
+  statusReason String?
+  finishReason String?
 
   packageId Int?
   package   CampaignPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
@@ -271,10 +309,15 @@ model Campaign {
   senderIdentity   SenderIdentity? @relation("CampaignSenderIdentity", fields: [senderIdentityId], references: [id], onDelete: Restrict)
 
   targetGroupId Int?
-  targetGroup   Group?         @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  targetGroup   Group?                   @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
   targetUsers   CampaignUser[]
   interactions  Interaction[]
-  createdAt     DateTime       @default(now())
+  lifecycleEvents CampaignLifecycleEvent[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([tenantId, status, scheduledAt])
+  @@index([tenantId, status, cutoffAt])
 }
 
 model CampaignUser {
@@ -300,6 +343,28 @@ model CampaignUser {
 
   @@unique([campaignId, userId])
   @@index([externalUserPublicId])
+}
+
+model CampaignLifecycleEvent {
+  id        Int                       @id @default(autoincrement())
+  tenantId   Int
+  tenant     Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignId Int
+  campaign   Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  type       CampaignLifecycleEventType
+  actorType  CampaignActorType         @default(SYSTEM)
+  actorUserId Int?
+  actorExternalId String?
+  actorEmail  String?
+  actorName   String?
+  actorSource String?
+  reason     String?
+  meta       Json?
+  createdAt  DateTime                  @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([tenantId, createdAt])
 }
 
 model IntegrationClient {
