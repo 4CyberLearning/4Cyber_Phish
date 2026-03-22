@@ -22,7 +22,7 @@ const DEFAULT_TENANT_SLUG = "demo";
 const campaignAdminInclude = {
   ...campaignIntegrationInclude,
   interactions: {
-    orderBy: { createdAt: "desc" },
+    orderBy: { timestamp: "desc" },
     take: 100,
   },
 };
