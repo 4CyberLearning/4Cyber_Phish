@@ -1,29 +1,12 @@
 // server/routes/templates.js
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 import { sendMail } from "../utils/mailer.js";
 
 const router = Router();
 
 // Prozatím používáme jediného tenanta "demo"
-const DEFAULT_TENANT_SLUG = "demo";
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 /**
  * Normalizace vstupu z frontendu do tvaru, který očekává Prisma.
@@ -69,7 +52,7 @@ router.get("/", async (_req, res) => {
     const tenantId = await getTenantId();
     const templates = await prisma.emailTemplate.findMany({
       where: { tenantId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { timestamp: "desc" },
     });
     res.json(templates);
   } catch (err) {

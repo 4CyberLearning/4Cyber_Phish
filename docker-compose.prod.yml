@@ -44,7 +44,14 @@ services:
       SMTP_SECURE: "false"
       SMTP_FROM: ${SMTP_FROM}
       SMTP_AUTH_MODE: ${SMTP_AUTH_MODE:-oauth}
-      SMTP_OAUTH_SCOPE: ${SMTP_OAUTH_SCOPE:-https://outlook.office365.com/.default}      
+      SMTP_OAUTH_SCOPE: ${SMTP_OAUTH_SCOPE:-https://outlook.office365.com/.default}
+
+      PHISH_TENANT_SLUG: ${PHISH_TENANT_SLUG:-cyberphish}
+      PHISH_TENANT_NAME: ${PHISH_TENANT_NAME:-CyberPhish}
+      PHISH_ADMIN_EMAIL: ${PHISH_ADMIN_EMAIL}
+      PHISH_ADMIN_PASSWORD: ${PHISH_ADMIN_PASSWORD}
+      PHISH_ADMIN_NAME: ${PHISH_ADMIN_NAME:-CyberPhish Admin}
+      PHISH_SEED_SAMPLE_CONTENT: ${PHISH_SEED_SAMPLE_CONTENT:-false}
 
       ADMIN1_EMAIL: ${ADMIN1_EMAIL}
       ADMIN1_PASSWORD: ${ADMIN1_PASSWORD}

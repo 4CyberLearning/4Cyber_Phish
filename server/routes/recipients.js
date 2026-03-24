@@ -1,28 +1,11 @@
 // server/routes/recipients.js
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
 
 // Prozatím jediný tenant "demo"
-const DEFAULT_TENANT_SLUG = "demo";
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 function normalizeUserInput(body = {}) {
   const email = String(body.email || "").trim().toLowerCase();
@@ -331,7 +314,7 @@ router.get("/users", async (req, res) => {
 
     const rows = await prisma.user.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { timestamp: "desc" },
       include: {
         groupLinks: {
           include: { group: true },

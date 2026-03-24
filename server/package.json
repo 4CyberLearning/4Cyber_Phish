@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "admin:add": "node scripts/add_admin.mjs",
+    "tenant:harden": "node scripts/hardenTenantUsers.mjs"
   },
   "keywords": [],
   "author": "",

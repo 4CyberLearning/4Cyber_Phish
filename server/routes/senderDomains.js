@@ -1,36 +1,10 @@
 // server/routes/senderDomains.js
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
 
-const DEFAULT_TENANT_SLUG = "demo";
-
-function toClientSenderDomain(d) {
-  if (!d) return d;
-  // frontend používá klíč `description`, v DB je `label`
-  return {
-    ...d,
-    description: d.label ?? null,
-  };
-}
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 function normalizeDomainInput(body = {}) {
   let rawDomain = String(body.domain || "").trim().toLowerCase();

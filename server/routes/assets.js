@@ -5,28 +5,11 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 
 const router = express.Router();
 
 // stejný default tenant jako jinde (templates, landing pages)
-const DEFAULT_TENANT_SLUG = "demo";
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,7 +50,7 @@ router.get("/", async (_req, res) => {
     const tenantId = await getTenantId();
     const assets = await prisma.asset.findMany({
       where: { tenantId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { timestamp: "desc" },
     });
     res.json(assets);
   } catch (err) {

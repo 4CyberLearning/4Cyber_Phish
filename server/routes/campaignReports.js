@@ -1,27 +1,10 @@
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 import { serializeLifecycleEvent } from "../services/campaignLifecycle.js";
 
 const router = Router();
 
-const DEFAULT_TENANT_SLUG = "demo";
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 function toIso(value) {
   return value?.toISOString?.() || value || null;
@@ -56,7 +39,7 @@ router.get("/campaigns/:id/report", async (req, res) => {
           orderBy: { id: "asc" },
         },
         lifecycleEvents: {
-          orderBy: { createdAt: "desc" },
+          orderBy: { timestamp: "desc" },
           take: 50,
         },
       },

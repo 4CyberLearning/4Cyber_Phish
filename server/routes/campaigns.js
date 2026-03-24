@@ -7,6 +7,7 @@ import {
   CampaignTargetType,
 } from "@prisma/client";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 import { sendCampaignNow } from "../services/campaignDispatch.js";
 import {
   buildLifecycleEventData,
@@ -17,32 +18,6 @@ import {
 } from "../services/campaignLifecycle.js";
 
 const router = Router();
-const DEFAULT_TENANT_SLUG = "demo";
-
-const campaignAdminInclude = {
-  ...campaignIntegrationInclude,
-  interactions: {
-    orderBy: { timestamp: "desc" },
-    take: 100,
-  },
-};
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, landingPageId, senderIdentityId }) {
   const checks = [];

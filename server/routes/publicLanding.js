@@ -1,28 +1,11 @@
 // server/routes/publicLanding.js
 import { Router } from "express";
 import prisma from "../db/prisma.js";
+import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
 
 // stejný default tenant jako jinde
-const DEFAULT_TENANT_SLUG = "demo";
-
-async function getTenantId() {
-  let tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-  });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        slug: DEFAULT_TENANT_SLUG,
-        name: "Demo tenant",
-      },
-    });
-  }
-
-  return tenant.id;
-}
 
 function wrapHtml(name, html = "") {
   const trimmed = html.trim();

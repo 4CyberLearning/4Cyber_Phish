@@ -1,130 +1,118 @@
-import { PrismaClient } from '@prisma/client'
-import bcrypt from 'bcryptjs'
-const prisma = new PrismaClient()
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
-async function main() {
-  const tenant = await prisma.tenant.upsert({
-    where: { slug: 'demo' },
-    update: {},
-    create: { name: 'Demo Tenant', slug: 'demo' }
-  })
+const prisma = new PrismaClient();
 
-  const isProd = process.env.NODE_ENV === 'production'
+const TENANT_SLUG = String(process.env.PHISH_TENANT_SLUG || "cyberphish").trim().toLowerCase();
+const TENANT_NAME = String(process.env.PHISH_TENANT_NAME || "CyberPhish").trim();
+const ADMIN_EMAIL = String(process.env.PHISH_ADMIN_EMAIL || "").trim().toLowerCase();
+const ADMIN_PASSWORD = String(process.env.PHISH_ADMIN_PASSWORD || "").trim();
+const ADMIN_NAME = String(process.env.PHISH_ADMIN_NAME || "CyberPhish Admin").trim();
+const SEED_SAMPLE_CONTENT = String(process.env.PHISH_SEED_SAMPLE_CONTENT || "false").trim() === "true";
 
-  const admins = [
-    {
-      email: process.env.ADMIN1_EMAIL ?? (isProd ? undefined : 'dpirkl@4cyber.cz'),
-      password: process.env.ADMIN1_PASSWORD ?? (isProd ? undefined : '3Cq2U!rtY4Vhz&B3Jcp^Q0svN0ar*c2'),
-      fullName: process.env.ADMIN1_NAME ?? 'Admin DP',
-    },
-    {
-      email: process.env.ADMIN2_EMAIL ?? (isProd ? undefined : 'jjancar@4cyber.cz'),
-      password: process.env.ADMIN2_PASSWORD ?? (isProd ? undefined : 'ww92f2MebJ2!X@YHv&XStMPdh6PhnN08'),
-      fullName: process.env.ADMIN2_NAME ?? 'Admin JJ',
-    },
-    {
-      email: process.env.ADMIN3_EMAIL ?? (isProd ? undefined : 'lpirkl@4cyber.cz'),
-      password: process.env.ADMIN3_PASSWORD ?? (isProd ? undefined : '62iejKLM4h5N0UzPBVuHkL'),
-      fullName: process.env.ADMIN3_NAME ?? 'Admin LP',
-    },
-    {
-      email: process.env.ADMIN4_EMAIL ?? (isProd ? undefined : 'jsommer@4cyber.cz'),
-      password: process.env.ADMIN4_PASSWORD ?? (isProd ? undefined : 'nv4GNmuA798mp8P9d6Psa5'),
-      fullName: process.env.ADMIN4_NAME ?? 'Admin JS',
-    },
-  ]
-
-  // V produkci seedujeme jen ty adminy, kteří mají email+password.
-  // ADMIN3/4 jsou volitelní.
-  const effectiveAdmins = admins.filter((a) => a.email && a.password)
-
-  if (isProd) {
-    if (effectiveAdmins.length === 0) {
-      throw new Error("Set at least ADMIN1_EMAIL and ADMIN1_PASSWORD in production env.")
-    }
-    effectiveAdmins.forEach((a) => {
-      if (String(a.password).startsWith("CHANGE_ME")) {
-        throw new Error("Admin password cannot start with CHANGE_ME in production env.")
-      }
-    })
+function assertRequiredEnv() {
+  if (!ADMIN_EMAIL) {
+    throw new Error("Missing PHISH_ADMIN_EMAIL for seed.");
   }
-
-  for (const a of effectiveAdmins) {
-    const passwordHash = await bcrypt.hash(a.password, 12)
-
-    await prisma.user.upsert({
-      where: {
-        tenantId_email: {
-          tenantId: tenant.id,
-          email: a.email,
-        },
-      },
-      update: {
-        fullName: a.fullName,
-        isAdmin: true,
-        passwordHash,
-      },
-      create: {
-        tenantId: tenant.id,
-        email: a.email,
-        fullName: a.fullName,
-        isAdmin: true,
-        passwordHash,
-      },
-    })
+  if (!ADMIN_PASSWORD) {
+    throw new Error("Missing PHISH_ADMIN_PASSWORD for seed.");
   }
-
-  if (process.env.NODE_ENV !== 'production') {
-    await prisma.user.createMany({
-      data: [
-        { email: 'user1@demo.local', fullName: 'User One', tenantId: tenant.id },
-        { email: 'user2@demo.local', fullName: 'User Two', tenantId: tenant.id },
-      ],
-      skipDuplicates: true,
-    })
+  if (process.env.NODE_ENV === "production" && ADMIN_PASSWORD.length < 20) {
+    throw new Error("PHISH_ADMIN_PASSWORD must have at least 20 characters in production.");
   }
+}
 
-  await prisma.emailTemplate.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Welcome check' } },
+async function seedAdmin(tenantId) {
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+
+  return prisma.user.upsert({
+    where: {
+      tenantId_email: {
+        tenantId,
+        email: ADMIN_EMAIL,
+      },
+    },
     update: {
-      subject: 'Quick check',
-      bodyHtml: '<p>Ahoj, toto je ukázková šablona.</p>',
-      tags: ['demo'],
+      fullName: ADMIN_NAME,
+      isAdmin: true,
+      isActive: true,
+      passwordHash,
+    },
+    create: {
+      tenantId,
+      email: ADMIN_EMAIL,
+      fullName: ADMIN_NAME,
+      isAdmin: true,
+      isActive: true,
+      passwordHash,
+    },
+  });
+}
+
+async function seedSampleContent(tenantId) {
+  await prisma.emailTemplate.upsert({
+    where: { tenantId_name: { tenantId, name: "Welcome check" } },
+    update: {
+      subject: "Quick check",
+      bodyHtml: "<p>Ahoj, toto je ukázková šablona.</p>",
+      tags: ["demo"],
       difficulty: 1,
     },
     create: {
-      tenantId: tenant.id,
-      name: 'Welcome check',
-      subject: 'Quick check',
-      bodyHtml: '<p>Ahoj, toto je ukázková šablona.</p>',
-      tags: ['demo'],
+      tenantId,
+      name: "Welcome check",
+      subject: "Quick check",
+      bodyHtml: "<p>Ahoj, toto je ukázková šablona.</p>",
+      tags: ["demo"],
       difficulty: 1,
     },
-  })
+  });
 
   await prisma.landingPage.upsert({
-    where: { urlSlug: 'lp-demo' },
+    where: { urlSlug: "lp-demo" },
     update: {
-      tenantId: tenant.id,
-      name: 'Simple LP',
-      html: '<h2>Simulace – tréninkový obsah</h2>',
-      tags: ['demo'],
+      tenantId,
+      name: "Simple LP",
+      html: "<h2>Simulace – tréninkový obsah</h2>",
+      tags: ["demo"],
     },
     create: {
-      tenantId: tenant.id,
-      name: 'Simple LP',
-      urlSlug: 'lp-demo',
-      html: '<h2>Simulace – tréninkový obsah</h2>',
-      tags: ['demo'],
+      tenantId,
+      name: "Simple LP",
+      urlSlug: "lp-demo",
+      html: "<h2>Simulace – tréninkový obsah</h2>",
+      tags: ["demo"],
     },
-  })
+  });
+}
+
+async function main() {
+  assertRequiredEnv();
+
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: TENANT_SLUG },
+    update: { name: TENANT_NAME },
+    create: { name: TENANT_NAME, slug: TENANT_SLUG },
+  });
+
+  const admin = await seedAdmin(tenant.id);
+
+  if (SEED_SAMPLE_CONTENT) {
+    await seedSampleContent(tenant.id);
+  }
+
+  console.log("Seed complete", {
+    tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+    admin: { id: admin.id, email: admin.email },
+    sampleContent: SEED_SAMPLE_CONTENT,
+  });
 }
 
 main()
   .catch((e) => {
-    console.error(e)
-    process.exitCode = 1
+    console.error(e);
+    process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect()
-  })
+    await prisma.$disconnect();
+  });
