@@ -314,7 +314,7 @@ router.get("/users", async (req, res) => {
 
     const rows = await prisma.user.findMany({
       where,
-      orderBy: { timestamp: "desc" },
+      orderBy: { createdAt: "desc" },
       include: {
         groupLinks: {
           include: { group: true },

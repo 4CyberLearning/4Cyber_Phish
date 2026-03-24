@@ -50,7 +50,7 @@ router.get("/", async (_req, res) => {
     const tenantId = await getTenantId();
     const assets = await prisma.asset.findMany({
       where: { tenantId },
-      orderBy: { timestamp: "desc" },
+      orderBy: { createdAt: "desc" },
     });
     res.json(assets);
   } catch (err) {

@@ -36,7 +36,7 @@ router.get("/users", async (_req, res) => {
     const users = await prisma.user.findMany({
       where: { tenantId },
       select: USER_PUBLIC_SELECT,
-      orderBy: { timestamp: "desc" },
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(users);

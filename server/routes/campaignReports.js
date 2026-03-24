@@ -39,7 +39,7 @@ router.get("/campaigns/:id/report", async (req, res) => {
           orderBy: { id: "asc" },
         },
         lifecycleEvents: {
-          orderBy: { timestamp: "desc" },
+          orderBy: { createdAt: "desc" },
           take: 50,
         },
       },

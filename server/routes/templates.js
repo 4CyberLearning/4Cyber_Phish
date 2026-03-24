@@ -52,7 +52,7 @@ router.get("/", async (_req, res) => {
     const tenantId = await getTenantId();
     const templates = await prisma.emailTemplate.findMany({
       where: { tenantId },
-      orderBy: { timestamp: "desc" },
+      orderBy: { createdAt: "desc" },
     });
     res.json(templates);
   } catch (err) {

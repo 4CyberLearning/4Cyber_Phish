@@ -168,7 +168,7 @@ async function replaceCampaignRecipientsFromGroup(tx, { tenantId, campaignId, gr
   return resolved;
 }
 
-function ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(body) {
+function ensureUserListTargetingRemoved(body) {
   if (body?.userIds !== undefined) {
     return "userIds are no longer supported; use targetGroupId";
   }
@@ -368,7 +368,7 @@ router.patch("/campaigns/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
+  const removedTargetingError = ensureUserListTargetingRemoved(req.body);
   if (removedTargetingError) {
     return res.status(400).json({ error: removedTargetingError });
   }
@@ -518,7 +518,7 @@ router.patch("/campaigns/:id", async (req, res) => {
 
 // POST /api/campaigns – vytvoření kampaně
 router.post("/campaigns", async (req, res) => {
-  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
+  const removedTargetingError = ensureUserListTargetingRemoved(req.body);
   if (removedTargetingError) {
     return res.status(400).json({ error: removedTargetingError });
   }
