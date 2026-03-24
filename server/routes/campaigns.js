@@ -19,6 +19,14 @@ import {
 
 const router = Router();
 
+const campaignAdminInclude = {
+  ...campaignIntegrationInclude,
+  interactions: {
+    orderBy: { timestamp: "desc" },
+    take: 100,
+  },
+};
+
 async function assertCampaignRefsBelongToTenant(tenantId, { emailTemplateId, landingPageId, senderIdentityId }) {
   const checks = [];
 

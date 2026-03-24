@@ -5,6 +5,13 @@ import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
 
+function toClientSenderDomain(d) {
+  if (!d) return d;
+  return {
+    ...d,
+    description: d.label ?? null,
+  };
+}
 
 function normalizeDomainInput(body = {}) {
   let rawDomain = String(body.domain || "").trim().toLowerCase();
