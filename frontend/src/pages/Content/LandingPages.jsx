@@ -294,15 +294,7 @@ export default function LandingPagesPage() {
   }
 
   function normalizeLandingAssetUrl(url) {
-    try {
-      const u = new URL(String(url || ""), window.location.origin);
-      if (u.pathname.startsWith("/uploads/")) {
-        return `${u.pathname}${u.search}${u.hash}`;
-      }
-      return String(url || "");
-    } catch {
-      return String(url || "");
-    }
+    return String(url || "");
   }
 
   function handlePickAsset(url) {

@@ -15,7 +15,7 @@ export const LANDING_PAGES_HELP = {
     "Vícekrokové landingy: každý krok obal .lp-step + data-lp-step=\"název\". Tlačítka pro přechod mezi kroky použij s data-lp-next-step=\"cilovy-krok\" nebo data-lp-back-step=\"predchozi-krok\".",
     "Formuláře piš standardně (<form> + <input>). Pro sledování submitu stačí dát formuláři class=\"lp-form\". Pokud nechceš reálné odeslání, přidej data-lp-block-submit=\"1\" – aplikace submit zablokuje, ale zaznamená, že formulář byl odeslán.",
     "Username/email pole musí být buď input[type=\"email\"], nebo mít v name/id některý z výrazů: email, user, login, username. Alternativně se vezme i vyplněný input[type=\"text\"] (jen pokud je ve stejném formuláři i input[type=\"password\"]). Vždy se ukládá jen informace vyplněno/nevyplněno, nikdy konkrétní hodnota.",
-    "Obrázky vkládej přes Assets (absolutní URL), aby fungovaly i mimo interní síť. Aplikace je při zobrazení přepíše na /uploads/… na stejné doméně.",
+    "Obrázky vkládej přes Assets jako absolutní URL. Absolutní URL se zachovávají, aby obrázky fungovaly správně v Phish i v náhledech v City.",
     "Landing page musí být otevíraná s tokenem (t=<token>). Bez tokenu se návštěva/submission nepřiřadí ke konkrétnímu uživateli (tracking skript se sice načte, ale bez tokenu nic neodešle).",
   ],
 

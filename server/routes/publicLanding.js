@@ -30,9 +30,7 @@ function wrapHtml(name, html = "") {
 }
 
 function rewriteUploadsToSameOrigin(html = "") {
-  return String(html)
-    // přepis libovolné absolutní URL na /uploads/... pokud vede na /uploads/
-    .replace(/https?:\/\/[^/"']+\/uploads\//gi, "/uploads/");
+  return String(html || "");
 }
 
 function escapeAttr(value = "") {

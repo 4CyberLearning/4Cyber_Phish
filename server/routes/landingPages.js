@@ -8,9 +8,7 @@ const router = Router();
 // jeden demo tenant – stejně jako u templates
 
 function rewriteUploadsToSameOrigin(html = "") {
-  return String(html)
-    // přepis libovolné absolutní URL na /uploads/... pokud vede na /uploads/
-    .replace(/https?:\/\/[^/"']+\/uploads\//gi, "/uploads/");
+  return String(html || "");
 }
 
 function normalizeLandingInput(body = {}) {
