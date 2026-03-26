@@ -1,6 +1,7 @@
+
 // server/routes/tracking.js
 import { Router } from "express";
-import { InteractionType } from "@prisma/client";
+import { CampaignPostSubmitActionType, InteractionType } from "@prisma/client";
 import prisma from "../db/prisma.js";
 import { isCampaignInteractionWindowOpen } from "../services/campaignLifecycle.js";
 
@@ -63,6 +64,28 @@ function normalizeRedirectTarget(rawTarget) {
   }
 }
 
+function buildTrainingRedirect(token, campaignId) {
+  const params = new URLSearchParams();
+  if (token) params.set("t", token);
+  if (campaignId) params.set("c", String(campaignId));
+  const qs = params.toString();
+  const path = `/education/default${qs ? `?${qs}` : ""}`;
+  return normalizeRedirectTarget(path);
+}
+
+function resolvePostSubmitTarget(campaign, token) {
+  if (!campaign) return "/";
+
+  if (
+    campaign.postSubmitActionType === CampaignPostSubmitActionType.REDIRECT_URL &&
+    campaign.postSubmitRedirectUrl
+  ) {
+    return normalizeRedirectTarget(campaign.postSubmitRedirectUrl);
+  }
+
+  return buildTrainingRedirect(token, campaign.id);
+}
+
 async function loadCampaignUserWithCampaign(token) {
   return prisma.campaignUser.findUnique({
     where: { trackingToken: token },
@@ -75,6 +98,8 @@ async function loadCampaignUserWithCampaign(token) {
           cutoffAt: true,
           finishedAt: true,
           cancelledAt: true,
+          postSubmitActionType: true,
+          postSubmitRedirectUrl: true,
         },
       },
     },
@@ -219,7 +244,14 @@ router.post("/s/:token", async (req, res) => {
       submitted: true,
     });
 
-    return res.json({ ok: recorded });
+    const redirectTo = resolvePostSubmitTarget(cu.campaign, token);
+    const actionType = cu.campaign?.postSubmitActionType || CampaignPostSubmitActionType.TRAINING_PAGE;
+
+    return res.json({
+      ok: recorded,
+      actionType,
+      redirectTo,
+    });
   } catch (err) {
     console.error("Landing submit tracking error:", err);
     return res.status(500).json({ ok: false });

@@ -32,6 +32,11 @@ enum CampaignTargetType {
   USER_LIST
 }
 
+enum CampaignPostSubmitActionType {
+  TRAINING_PAGE
+  REDIRECT_URL
+}
+
 enum CampaignLifecycleEventType {
   CREATED
   SCHEDULED
@@ -292,6 +297,8 @@ model Campaign {
   status      CampaignStatus    @default(SCHEDULED)
   source      CampaignSource    @default(UNKNOWN)
   targetType  CampaignTargetType @default(GROUP)
+  postSubmitActionType CampaignPostSubmitActionType @default(TRAINING_PAGE)
+  postSubmitRedirectUrl String?
   recipientCountSnapshot Int    @default(0)
   statusReason String?
   finishReason String?

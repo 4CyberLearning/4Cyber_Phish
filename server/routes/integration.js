@@ -1,6 +1,7 @@
 import express from "express";
 import {
   CampaignLifecycleEventType,
+  CampaignPostSubmitActionType,
   CampaignSource,
   CampaignStatus,
   CampaignTargetType,
@@ -93,6 +94,46 @@ function buildFullName(firstName, lastName, email) {
   const full = [firstName, lastName].filter(Boolean).join(" ").trim();
   return full || email;
 }
+
+
+function normalizeAbsoluteHttpUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolvePostSubmitConfig(body = {}, fallback = {}) {
+  const rawType = body.postSubmitActionType ?? fallback.postSubmitActionType ?? CampaignPostSubmitActionType.TRAINING_PAGE;
+  const actionType = Object.values(CampaignPostSubmitActionType).includes(rawType)
+    ? rawType
+    : null;
+
+  if (!actionType) {
+    throw new Error("Invalid postSubmitActionType");
+  }
+
+  const redirectUrl = normalizeAbsoluteHttpUrl(
+    body.postSubmitRedirectUrl ?? fallback.postSubmitRedirectUrl ?? null
+  );
+
+  if (actionType === CampaignPostSubmitActionType.REDIRECT_URL && !redirectUrl) {
+    throw new Error("postSubmitRedirectUrl is required for REDIRECT_URL");
+  }
+
+  return {
+    postSubmitActionType: actionType,
+    postSubmitRedirectUrl:
+      actionType === CampaignPostSubmitActionType.REDIRECT_URL ? redirectUrl : null,
+  };
+}
+
 
 // PUT /api/integration/recipients
 // PUT /api/integration/recipients
@@ -556,6 +597,7 @@ router.post("/campaigns", async (req, res) => {
     const actor = normalizeCampaignActor(req.body?.actor, {
       source: "city_integration",
     });
+    const postSubmit = resolvePostSubmitConfig(req.body);
 
     if (!Number.isInteger(packageId) || packageId <= 0) return res.status(400).json({ error: "Invalid packageId" });
     if (!(scheduledAt instanceof Date)) return res.status(400).json({ error: "Invalid scheduledAt" });
@@ -670,6 +712,7 @@ router.post("/campaigns/:id/cancel", async (req, res) => {
     const actor = normalizeCampaignActor(req.body?.actor, {
       source: "city_integration",
     });
+    const postSubmit = resolvePostSubmitConfig(req.body);
     const reason = String(req.body?.reason || "").trim() || "cancelled_via_integration";
     const now = new Date();
 

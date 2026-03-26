@@ -77,6 +77,8 @@ router.get("/campaigns/:id/report", async (req, res) => {
       status: campaign.status,
       source: campaign.source,
       targetType: campaign.targetType,
+      postSubmitActionType: campaign.postSubmitActionType,
+      postSubmitRedirectUrl: campaign.postSubmitRedirectUrl || null,
       statusReason: campaign.statusReason || null,
       finishReason: campaign.finishReason || null,
       scheduledAt: toIso(campaign.scheduledAt),

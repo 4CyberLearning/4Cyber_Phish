@@ -2,6 +2,7 @@
 import { Router } from "express";
 import {
   CampaignLifecycleEventType,
+  CampaignPostSubmitActionType,
   CampaignSource,
   CampaignStatus,
   CampaignTargetType,
@@ -168,7 +169,7 @@ async function replaceCampaignRecipientsFromGroup(tx, { tenantId, campaignId, gr
   return resolved;
 }
 
-function ensureUserListTargetingRemoved(body) {
+function ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(body) {
   if (body?.userIds !== undefined) {
     return "userIds are no longer supported; use targetGroupId";
   }
@@ -185,6 +186,45 @@ function validateLifecycleWindow(scheduledAt, cutoffAt) {
   if (cutoffAt <= scheduledAt) {
     throw new Error("cutoffAt must be later than scheduledAt");
   }
+}
+
+
+function normalizeAbsoluteHttpUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolvePostSubmitConfig(body = {}, fallback = {}) {
+  const rawType = body.postSubmitActionType ?? fallback.postSubmitActionType ?? CampaignPostSubmitActionType.TRAINING_PAGE;
+  const actionType = Object.values(CampaignPostSubmitActionType).includes(rawType)
+    ? rawType
+    : null;
+
+  if (!actionType) {
+    throw new Error("Invalid postSubmitActionType");
+  }
+
+  const redirectUrl = normalizeAbsoluteHttpUrl(
+    body.postSubmitRedirectUrl ?? fallback.postSubmitRedirectUrl ?? null
+  );
+
+  if (actionType === CampaignPostSubmitActionType.REDIRECT_URL && !redirectUrl) {
+    throw new Error("postSubmitRedirectUrl is required for REDIRECT_URL");
+  }
+
+  return {
+    postSubmitActionType: actionType,
+    postSubmitRedirectUrl:
+      actionType === CampaignPostSubmitActionType.REDIRECT_URL ? redirectUrl : null,
+  };
 }
 
 async function resolveCampaignRefsForBody(tenantId, body) {
@@ -368,7 +408,7 @@ router.patch("/campaigns/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const removedTargetingError = ensureUserListTargetingRemoved(req.body);
+  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
   if (removedTargetingError) {
     return res.status(400).json({ error: removedTargetingError });
   }
@@ -390,6 +430,8 @@ router.patch("/campaigns/:id", async (req, res) => {
         emailTemplateId: true,
         landingPageId: true,
         senderIdentityId: true,
+        postSubmitActionType: true,
+        postSubmitRedirectUrl: true,
       },
     });
 
@@ -433,6 +475,13 @@ router.patch("/campaigns/:id", async (req, res) => {
     }
 
     validateLifecycleWindow(nextScheduledAt, nextCutoffAt);
+
+    if (body.postSubmitActionType !== undefined || body.postSubmitRedirectUrl !== undefined) {
+      const postSubmit = resolvePostSubmitConfig(body, existing);
+      updateData.postSubmitActionType = postSubmit.postSubmitActionType;
+      updateData.postSubmitRedirectUrl = postSubmit.postSubmitRedirectUrl;
+      updatedFields.push("postSubmitActionType", "postSubmitRedirectUrl");
+    }
 
     const resolvedRefs = await resolveCampaignRefsForBody(tenantId, body);
 
@@ -518,7 +567,7 @@ router.patch("/campaigns/:id", async (req, res) => {
 
 // POST /api/campaigns – vytvoření kampaně
 router.post("/campaigns", async (req, res) => {
-  const removedTargetingError = ensureUserListTargetingRemoved(req.body);
+  const removedTargetingError = ensurpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(req.body);
   if (removedTargetingError) {
     return res.status(400).json({ error: removedTargetingError });
   }
@@ -535,6 +584,7 @@ router.post("/campaigns", async (req, res) => {
     const scheduledAt = parseDateOrNull(req.body?.scheduledAt);
     const cutoffAt = parseDateOrNull(req.body?.cutoffAt);
     const targetGroupId = parseOptionalInt(req.body?.targetGroupId, "targetGroupId");
+    const postSubmit = resolvePostSubmitConfig(req.body);
 
     validateLifecycleWindow(scheduledAt, cutoffAt);
 
@@ -564,6 +614,8 @@ router.post("/campaigns", async (req, res) => {
           source: CampaignSource.LOCAL_ADMIN,
           targetType: CampaignTargetType.GROUP,
           recipientCountSnapshot: resolvedGroup.activeUsers.length,
+          postSubmitActionType: postSubmit.postSubmitActionType,
+          postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
           packageId: resolvedRefs.packageId ?? null,
           emailTemplateId:
             resolvedRefs.emailTemplateId === undefined ? null : resolvedRefs.emailTemplateId,
@@ -588,6 +640,8 @@ router.post("/campaigns", async (req, res) => {
                 meta: {
                   targetGroupId: resolvedGroup.group.id,
                   recipientCountSnapshot: resolvedGroup.activeUsers.length,
+          postSubmitActionType: postSubmit.postSubmitActionType,
+          postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
                 },
               }),
               buildLifecycleEventData({
@@ -598,6 +652,8 @@ router.post("/campaigns", async (req, res) => {
                 meta: {
                   scheduledAt: scheduledAt.toISOString(),
                   cutoffAt: cutoffAt.toISOString(),
+                  postSubmitActionType: postSubmit.postSubmitActionType,
+                  postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
                 },
               }),
             ],

@@ -1,6 +1,7 @@
 import {
   CampaignActorType,
   CampaignLifecycleEventType,
+  CampaignPostSubmitActionType,
   CampaignSource,
   CampaignStatus,
   CampaignTargetType,
@@ -132,6 +133,8 @@ export function serializeCampaignForIntegration(row) {
     status: row.status,
     source: row.source || CampaignSource.UNKNOWN,
     targetType: row.targetType || CampaignTargetType.GROUP,
+    postSubmitActionType: row.postSubmitActionType || CampaignPostSubmitActionType.TRAINING_PAGE,
+    postSubmitRedirectUrl: row.postSubmitRedirectUrl || null,
     statusReason: row.statusReason || null,
     finishReason: row.finishReason || null,
     scheduledAt: row.scheduledAt?.toISOString?.() || row.scheduledAt || null,
@@ -219,6 +222,7 @@ export function buildCampaignName({ name, packageName, audienceName }) {
 export const CampaignLifecycle = {
   CampaignActorType,
   CampaignLifecycleEventType,
+  CampaignPostSubmitActionType,
   CampaignSource,
   CampaignStatus,
   CampaignTargetType,

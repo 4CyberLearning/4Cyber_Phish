@@ -1,3 +1,4 @@
+
 // server/public/js/landing-tracking.js
 (function () {
   var script =
@@ -10,23 +11,21 @@
   if (!TOKEN) return;
 
   function sendSubmit(meta) {
-    try {
-      var payload = JSON.stringify(meta);
-      var url = "/t/s/" + encodeURIComponent(TOKEN);
+    var payload = JSON.stringify(meta || {});
+    var url = "/t/s/" + encodeURIComponent(TOKEN);
 
-      if (navigator.sendBeacon) {
-        var blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon(url, blob);
-        return;
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      credentials: "same-origin",
+      keepalive: true
+    }).then(function (res) {
+      if (!res.ok) {
+        throw new Error("submit_tracking_failed");
       }
-
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-        keepalive: true
-      }).catch(function () {});
-    } catch (e) {}
+      return res.json();
+    });
   }
 
   function sendOpen() {
@@ -64,7 +63,37 @@
     } catch (e) {}
   }
 
-  // OPEN tracking + token propagation po načtení
+  function setFormBusy(form, busy) {
+    try {
+      var controls = form.querySelectorAll("button, input, select, textarea");
+      controls.forEach(function (node) {
+        if (busy) {
+          node.setAttribute("data-lp-was-disabled", node.disabled ? "1" : "0");
+          node.disabled = true;
+        } else if (node.getAttribute("data-lp-was-disabled") === "0") {
+          node.disabled = false;
+          node.removeAttribute("data-lp-was-disabled");
+        }
+      });
+    } catch (e) {}
+  }
+
+  function showSubmitNote(form, text) {
+    try {
+      var existing = form.querySelector('[data-lp-submit-note="1"]');
+      if (existing) existing.remove();
+
+      var note = document.createElement("div");
+      note.setAttribute("role", "status");
+      note.setAttribute("data-lp-submit-note", "1");
+      note.style.marginTop = "12px";
+      note.style.fontSize = "13px";
+      note.style.color = "#374151";
+      note.textContent = text;
+      form.appendChild(note);
+    } catch (e) {}
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       sendOpen();
@@ -76,35 +105,33 @@
     appendTokenToLinks();
     document.querySelectorAll("form").forEach(ensureFormToken);
   }
-  
-  // SUBMIT tracking (capture)
+
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
     if (!form) return;
 
     ensureFormToken(form);
 
-    // default submit NEblokujeme, jen pokud si to stránka explicitně řekne
-    var blockAttr = (form.getAttribute("data-lp-block-submit") || "").toLowerCase();
-    var blockSubmit = (blockAttr === "1" || blockAttr === "true");
-    if (blockSubmit) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
 
-    sendSubmit({ pageSlug: PAGE, submitted: true });
+    setFormBusy(form, true);
 
-    if (blockSubmit) {
-      try {
-        var btn = form.querySelector('button[type="submit"],input[type="submit"]');
-        if (btn) btn.disabled = true;
+    sendSubmit({ pageSlug: PAGE, submitted: true })
+      .then(function (result) {
+        var redirectTo = result && result.redirectTo ? String(result.redirectTo) : "";
+        if (redirectTo) {
+          window.location.assign(redirectTo);
+          return;
+        }
 
-        var note = document.createElement("div");
-        note.setAttribute("role", "status");
-        note.textContent = "Děkujeme. Ověření bylo přijato.";
-        form.appendChild(note);
-      } catch (e) {}
-    }
+        showSubmitNote(form, "Děkujeme. Ověření bylo přijato.");
+        setFormBusy(form, false);
+      })
+      .catch(function () {
+        showSubmitNote(form, "Nepodařilo se dokončit ověření. Zkuste to prosím znovu.");
+        setFormBusy(form, false);
+      });
   }, true);
 })();
