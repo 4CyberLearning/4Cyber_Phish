@@ -40,6 +40,37 @@ if (process.env.TRUST_PROXY === "1") {
   app.set("trust proxy", 1);
 }
 
+function collectCspOrigins(...values) {
+  const out = new Set();
+
+  for (const raw of values) {
+    const parts = String(raw || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    for (const part of parts) {
+      try {
+        const url = new URL(part);
+        if (url.protocol === "http:" || url.protocol === "https:") {
+          out.add(url.origin);
+        }
+      } catch {
+        // ignore invalid values
+      }
+    }
+  }
+
+  return [...out];
+}
+
+const landingExternalOrigins = collectCspOrigins(
+  process.env.PUBLIC_BASE_URL,
+  process.env.PUBLIC_WEB_BASE_URL,
+  process.env.LANDING_ASSET_ORIGINS,
+  process.env.PHISH_TRAINING_VIDEO_URL
+);
+
 // ---------- Security headers ----------
 app.use(
   helmet({
@@ -63,10 +94,11 @@ const landingCsp = helmet.contentSecurityPolicy({
   useDefaults: true,
   directives: {
     ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-    "img-src": ["'self'", "data:"],       // obrázky přes /uploads/...
-    "script-src": ["'self'"],             // jen externí JS
-    "script-src-attr": ["'none'"],        // blok onclick/onsubmit
-    "connect-src": ["'self'"],            // tracking /t/s/*
+    "img-src": ["'self'", "data:", ...landingExternalOrigins],
+    "media-src": ["'self'", "data:", ...landingExternalOrigins],
+    "script-src": ["'self'"],
+    "script-src-attr": ["'none'"],
+    "connect-src": ["'self'"],
   },
 });
 
