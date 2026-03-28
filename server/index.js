@@ -29,6 +29,7 @@ import requireIntegrationAuth from "./middleware/requireIntegrationAuth.js";
 import reportsRouter from "./routes/reports.js";
 import integrationRouter from "./routes/integration.js";
 import packagesRouter from "./routes/packages.js";
+import educationRouter from "./routes/education.js";
 import { startCampaignScheduler } from "./services/campaignScheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,7 +79,8 @@ app.use(
       useDefaults: true,
       directives: {
         defaultSrc: ["'self'"],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", ...landingExternalOrigins],
+        mediaSrc: ["'self'", "data:", ...landingExternalOrigins],
         scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],
         connectSrc: ["'self'"],
@@ -183,6 +185,7 @@ app.use("/js", express.static(path.join(__dirname, "public/js")));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 app.use("/t", trackingRouter);
 app.use("/lp", landingCsp, publicLandingRouter);
+app.use("/education", landingCsp, educationRouter);
 
 // rate-limit pro auth
 const authLimiter = rateLimit({

@@ -44,7 +44,7 @@ router.get("/default", (req, res) => {
     .filter(Boolean);
 
   const videoUrl = normalizeVideoUrl(
-    process.env.PHISH_TRAINING_VIDEO_URL || "/training/phishing-awareness.mp4"
+    process.env.PHISH_TRAINING_VIDEO_URL || "/uploads/phishing-awareness.mp4"
   );
 
   const listHtml = bullets

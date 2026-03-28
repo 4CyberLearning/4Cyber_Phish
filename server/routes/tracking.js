@@ -1,62 +1,41 @@
-
-// server/routes/tracking.js
-import { Router } from "express";
-import { CampaignPostSubmitActionType, InteractionType } from "@prisma/client";
+import express from "express";
+import { InteractionType } from "@prisma/client";
 import prisma from "../db/prisma.js";
-import { isCampaignInteractionWindowOpen } from "../services/campaignLifecycle.js";
 
-const router = Router();
+const router = express.Router();
 
-const WEB_BASE =
-  (process.env.PUBLIC_WEB_BASE_URL || process.env.PUBLIC_BASE_URL || "").replace(
-    /\/$/,
-    ""
-  );
-
-const PIXEL = Buffer.from(
-  "R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=",
-  "base64"
-);
+const WEB_BASE = String(process.env.PUBLIC_WEB_BASE_URL || "").replace(/\/$/, "");
 
 function noCache(res) {
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
-  res.setHeader("X-Content-Type-Options", "nosniff");
 }
 
 function sendPixel(res) {
-  noCache(res);
-  res.status(200);
+  const pixel = Buffer.from(
+    "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+    "base64"
+  );
   res.setHeader("Content-Type", "image/gif");
-  res.setHeader("Content-Length", PIXEL.length);
-  res.end(PIXEL);
+  res.setHeader("Content-Length", pixel.length);
+  noCache(res);
+  res.end(pixel);
 }
 
-function safeDecodeURIComponent(v) {
+function safeDecodeURIComponent(value) {
   try {
-    return decodeURIComponent(String(v));
+    return decodeURIComponent(value);
   } catch {
     return null;
   }
 }
 
-function normalizeRedirectTarget(rawTarget) {
-  if (!rawTarget) return "/";
-
-  const t = String(rawTarget).trim();
-  if (!t) return "/";
-
-  if (t.startsWith("/")) {
-    return WEB_BASE ? WEB_BASE + t : t;
-  }
-
+function normalizeRedirectTarget(raw) {
+  if (!raw) return "/";
   try {
-    const u = new URL(t);
+    const u = new URL(raw);
     if (u.protocol !== "http:" && u.protocol !== "https:") return "/";
     return u.toString();
   } catch {
@@ -64,26 +43,55 @@ function normalizeRedirectTarget(rawTarget) {
   }
 }
 
-function buildTrainingRedirect(token, campaignId) {
-  const params = new URLSearchParams();
-  if (token) params.set("t", token);
-  if (campaignId) params.set("c", String(campaignId));
-  const qs = params.toString();
-  const path = `/education/default${qs ? `?${qs}` : ""}`;
-  return normalizeRedirectTarget(path);
-}
+function isCampaignInteractionWindowOpen(campaign) {
+  if (!campaign) return false;
+  if (campaign.cancelledAt) return false;
+  if (campaign.finishedAt) return false;
 
-function resolvePostSubmitTarget(campaign, token) {
-  if (!campaign) return "/";
+  const now = Date.now();
+  const scheduledAt = campaign.startedAt || campaign.scheduledAt;
+  const cutoffAt = campaign.cutoffAt;
 
-  if (
-    campaign.postSubmitActionType === CampaignPostSubmitActionType.REDIRECT_URL &&
-    campaign.postSubmitRedirectUrl
-  ) {
-    return normalizeRedirectTarget(campaign.postSubmitRedirectUrl);
+  if (scheduledAt && new Date(scheduledAt).getTime() > now) {
+    return false;
   }
 
-  return buildTrainingRedirect(token, campaign.id);
+  if (cutoffAt && new Date(cutoffAt).getTime() <= now) {
+    return false;
+  }
+
+  return true;
+}
+
+function absoluteAppUrl(pathname, params = {}) {
+  const base = WEB_BASE || "";
+  if (!base) {
+    const qs = new URLSearchParams(params).toString();
+    return `${pathname}${qs ? `?${qs}` : ""}`;
+  }
+
+  const url = new URL(pathname, base);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url.toString();
+}
+
+function resolvePostSubmitRedirect(cu) {
+  const campaign = cu?.campaign;
+  if (!campaign) return null;
+
+  const type = String(campaign.postSubmitActionType || "TRAINING_PAGE").toUpperCase();
+
+  if (type === "REDIRECT_URL") {
+    const raw = String(campaign.postSubmitRedirectUrl || "").trim();
+    const normalized = normalizeRedirectTarget(raw);
+    return normalized !== "/" ? normalized : absoluteAppUrl("/education/default", { t: cu.trackingToken, c: campaign.id });
+  }
+
+  return absoluteAppUrl("/education/default", { t: cu.trackingToken, c: campaign.id });
 }
 
 async function loadCampaignUserWithCampaign(token) {
@@ -94,6 +102,7 @@ async function loadCampaignUserWithCampaign(token) {
         select: {
           id: true,
           status: true,
+          scheduledAt: true,
           startedAt: true,
           cutoffAt: true,
           finishedAt: true,
@@ -119,10 +128,6 @@ async function recordInteraction(cu, type, meta) {
   const now = new Date();
   const updates = {};
 
-  if (type === InteractionType.EMAIL_SENT) {
-    updates.delivered = true;
-    if (!cu.sentAt) updates.sentAt = now;
-  }
   if (type === InteractionType.OPENED && !cu.openedAt) {
     updates.openedAt = now;
   }
@@ -167,7 +172,6 @@ router.get("/o/:token.gif", async (req, res) => {
     if (!token) return sendPixel(res);
 
     const cu = await loadCampaignUserWithCampaign(token);
-
     if (cu) {
       await recordInteraction(cu, InteractionType.OPENED);
     }
@@ -188,7 +192,6 @@ router.get("/c/:token", async (req, res) => {
   try {
     if (token) {
       const cu = await loadCampaignUserWithCampaign(token);
-
       if (cu) {
         await recordInteraction(cu, InteractionType.CLICKED);
       }
@@ -217,9 +220,18 @@ router.get("/r/:token", async (req, res) => {
       });
     }
 
-    const url = new URL(fallback || "/", fallback.startsWith("http") ? undefined : "http://localhost");
+    const url = new URL(
+      fallback || "/",
+      fallback.startsWith("http") ? undefined : "http://localhost"
+    );
     url.searchParams.set("phish_reported", "1");
-    return res.redirect(302, fallback.startsWith("http") ? url.toString() : `${fallback}${fallback.includes("?") ? "&" : "?"}phish_reported=1`);
+
+    return res.redirect(
+      302,
+      fallback.startsWith("http")
+        ? url.toString()
+        : `${fallback}${fallback.includes("?") ? "&" : "?"}phish_reported=1`
+    );
   } catch (e) {
     console.error("REPORT tracking error", e);
     return res.redirect(302, fallback);
@@ -244,8 +256,8 @@ router.post("/s/:token", async (req, res) => {
       submitted: true,
     });
 
-    const redirectTo = resolvePostSubmitTarget(cu.campaign, token);
-    const actionType = cu.campaign?.postSubmitActionType || CampaignPostSubmitActionType.TRAINING_PAGE;
+    const redirectTo = resolvePostSubmitRedirect(cu);
+    const actionType = String(cu?.campaign?.postSubmitActionType || "TRAINING_PAGE").toUpperCase();
 
     return res.json({
       ok: recorded,
