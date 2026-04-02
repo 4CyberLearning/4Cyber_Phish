@@ -654,6 +654,8 @@ router.post("/campaigns", async (req, res) => {
         source: CampaignSource.INTEGRATION,
         targetType: CampaignTargetType.GROUP,
         recipientCountSnapshot: users.length,
+        postSubmitActionType: postSubmit.postSubmitActionType,
+        postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
         packageId: pkg.id,
         emailTemplateId: pkg.emailTemplateId,
         landingPageId: pkg.landingPageId,
@@ -676,6 +678,8 @@ router.post("/campaigns", async (req, res) => {
                 packageId: pkg.id,
                 targetGroupId: targetGroup.id,
                 recipientCountSnapshot: users.length,
+                postSubmitActionType: postSubmit.postSubmitActionType,
+                postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
               },
             }),
             buildLifecycleEventData({
@@ -686,6 +690,8 @@ router.post("/campaigns", async (req, res) => {
               meta: {
                 scheduledAt: scheduledAt.toISOString(),
                 cutoffAt: cutoffAt.toISOString(),
+                postSubmitActionType: postSubmit.postSubmitActionType,
+                postSubmitRedirectUrl: postSubmit.postSubmitRedirectUrl,
               },
             }),
           ],
