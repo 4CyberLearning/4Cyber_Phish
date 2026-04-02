@@ -598,7 +598,8 @@ router.post("/campaigns", async (req, res) => {
       source: "city_integration",
     });
     const postSubmit = resolvePostSubmitConfig(req.body);
-
+    console.log("POST /api/integration/campaigns body =", JSON.stringify(req.body));
+    
     if (!Number.isInteger(packageId) || packageId <= 0) return res.status(400).json({ error: "Invalid packageId" });
     if (!(scheduledAt instanceof Date)) return res.status(400).json({ error: "Invalid scheduledAt" });
     if (!(cutoffAt instanceof Date)) return res.status(400).json({ error: "Invalid cutoffAt" });
