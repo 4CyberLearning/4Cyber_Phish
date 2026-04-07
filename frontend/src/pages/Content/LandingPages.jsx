@@ -17,8 +17,24 @@ const EMPTY_PAGE = {
   name: "",
   urlSlug: "",
   html: "",
+  language: "CZ",
   tags: [],
 };
+
+const LANGUAGE_OPTIONS = [
+  { value: "CZ", label: "Čeština" },
+  { value: "EN", label: "English" },
+  { value: "DE", label: "Deutsch" },
+  { value: "FR", label: "Français" },
+  { value: "IT", label: "Italiano" },
+  { value: "ES", label: "Español" },
+  { value: "PL", label: "Polski" },
+  { value: "NL", label: "Nederlands" },
+  { value: "SK", label: "Slovenčina" },
+  { value: "HU", label: "Magyar" },
+  { value: "RO", label: "Română" },
+  { value: "PT", label: "Português" },
+];
 
 function escapeHtmlTitle(s) {
   return String(s || "")
@@ -325,7 +341,7 @@ export default function LandingPagesPage() {
 
     return pages.filter((p) => {
       const tags = Array.isArray(p.tags) ? p.tags.join(" ") : "";
-      const hay = `${p.name || ""} ${p.urlSlug || ""} ${tags}`.toLowerCase();
+      const hay = `${p.name || ""} ${p.urlSlug || ""} ${tags} ${p.language || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [pages, searchQuery]);
@@ -387,6 +403,7 @@ export default function LandingPagesPage() {
       name: page.name || "",
       urlSlug: page.urlSlug || "",
       html: page.html || "",
+      language: page.language || "CZ",
       tags: page.tags || [],
     });
     setSuccess(null);
@@ -402,6 +419,7 @@ export default function LandingPagesPage() {
       name: `${page.name} (copy)`,
       urlSlug: "",
       html: page.html || "",
+      language: page.language || "CZ",
       tags: page.tags || [],
     });
     setSuccess(null);
@@ -435,6 +453,7 @@ export default function LandingPagesPage() {
         name,
         urlSlug: slugInput,
         html: form.html,
+        language: String(form.language || "CZ").trim().toUpperCase(),
         tags: tagsValue
           .split(",")
           .map((s) => s.trim())
@@ -455,6 +474,7 @@ export default function LandingPagesPage() {
           name: saved.name || "",
           urlSlug: saved.urlSlug || "",
           html: saved.html || "",
+          language: saved.language || "CZ",
           tags: saved.tags || [],
         });
         setSelectedId(saved.id);
@@ -493,6 +513,7 @@ export default function LandingPagesPage() {
         name: `${form.name.trim() || "Landing page"} (copy)`,
         urlSlug: "",
         html: form.html,
+        language: String(form.language || "CZ").trim().toUpperCase(),
         tags: tagsValue
           .split(",")
           .map((s) => s.trim())
@@ -508,6 +529,7 @@ export default function LandingPagesPage() {
           name: saved.name || "",
           urlSlug: saved.urlSlug || "",
           html: saved.html || "",
+          language: saved.language || "CZ",
           tags: saved.tags || [],
         });
         setSelectedId(saved.id);
@@ -680,9 +702,15 @@ export default function LandingPagesPage() {
                     </span>
                   )}
                   <div className="mb-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-gray-900">{page.name}</div>
-                      <div className="truncate text-xs text-gray-500">/lp/{page.urlSlug}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-gray-900">{page.name}</div>
+                        <div className="truncate text-xs text-gray-500">/lp/{page.urlSlug}</div>
+                      </div>
+
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        {page.language || "CZ"}
+                      </span>
                     </div>
 
                     <button
@@ -795,7 +823,7 @@ export default function LandingPagesPage() {
                 handleSave();
               }}
             >
-              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     {t("content.landingPages.fields.name") || "Název"}
@@ -819,6 +847,21 @@ export default function LandingPagesPage() {
                     placeholder="např. security-check"
                     className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
                   />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Jazyk</label>
+                  <select
+                    value={form.language || "CZ"}
+                    onChange={(e) => setField("language", e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  >
+                    {LANGUAGE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

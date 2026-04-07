@@ -20,7 +20,7 @@ function normalizeLanguage(value) {
 /**
  * Normalizace vstupu z frontendu do tvaru, který očekává Prisma.
  * - tags: pole stringů (ze stringu "a,b,c" i z pole)
- * - difficulty: číslo (default 1)
+ * - language: povinný jazyk obsahu
  */
 function normalizeTemplateInput(body = {}) {
   const {
@@ -42,16 +42,12 @@ function normalizeTemplateInput(body = {}) {
       .filter(Boolean);
   }
 
-  const difficultyNumber = Number.isFinite(Number(difficulty))
-    ? Number(difficulty)
-    : 1;
-
   return {
     name: String(name).trim(),
     subject: String(subject).trim(),
     bodyHtml: bodyHtml || "",
     tags: tagsArr,
-    language: normalizeLanguage(body.language),
+    language: normalizeLanguage(language),
   };
 }
 
