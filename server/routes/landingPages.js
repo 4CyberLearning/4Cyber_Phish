@@ -4,7 +4,15 @@ import prisma from "../db/prisma.js";
 import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
+const ALLOWED_LANGUAGES = new Set(["CZ","EN","DE","FR","IT","ES","PL","NL","SK","HU","RO","PT"]);
 
+function normalizeLanguage(value) {
+  const normalized = String(value || "CZ").trim().toUpperCase();
+  if (!ALLOWED_LANGUAGES.has(normalized)) {
+    throw new Error("Invalid language");
+  }
+  return normalized;
+}
 // jeden demo tenant – stejně jako u templates
 
 function rewriteUploadsToSameOrigin(html = "") {
@@ -40,6 +48,7 @@ function normalizeLandingInput(body = {}) {
     urlSlug: safeSlug,
     html: rewriteUploadsToSameOrigin(html || ""),
     tags: tagsArr,
+    language: normalizeLanguage(language),
   };
 }
 
@@ -108,6 +117,7 @@ router.post("/", async (req, res) => {
         urlSlug: data.urlSlug,
         html: data.html,
         tags: data.tags,
+        language: data.language,
       },
     });
 
@@ -153,6 +163,7 @@ router.put("/:id", async (req, res) => {
         urlSlug: data.urlSlug,
         html: data.html,
         tags: data.tags,
+        language: data.language,
       },
     });
 

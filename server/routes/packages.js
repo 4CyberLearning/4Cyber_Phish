@@ -9,16 +9,10 @@ function normalizePackageInput(body = {}) {
   const description = body.description != null ? String(body.description).trim() : null;
   const category = body.category != null ? String(body.category).trim() : null;
   const previewText = body.previewText != null ? String(body.previewText).trim() : null;
-
-  const difficultyRaw = body.difficulty ?? 1;
-  const difficulty = Number(difficultyRaw);
-  if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 5) {
-    throw new Error("Difficulty must be an integer between 1 and 5");
-  }
-
   const emailTemplateId = Number(body.emailTemplateId);
   const landingPageId = Number(body.landingPageId);
   const senderIdentityId = Number(body.senderIdentityId);
+  const language = normalizeLanguage(body.language);
 
   if (!Number.isInteger(emailTemplateId)) throw new Error("Invalid emailTemplateId");
   if (!Number.isInteger(landingPageId)) throw new Error("Invalid landingPageId");
@@ -29,12 +23,12 @@ function normalizePackageInput(body = {}) {
     description: description || null,
     category: category || null,
     previewText: previewText || null,
-    difficulty,
     isActive: body.isActive === false ? false : true,
     isApproved: body.isApproved === true,
     emailTemplateId,
     landingPageId,
     senderIdentityId,
+    language,
   };
 }
 
@@ -42,11 +36,11 @@ async function assertPackageRefsBelongToTenant(tx, tenantId, input) {
   const [template, landingPage, senderIdentity] = await Promise.all([
     tx.emailTemplate.findFirst({
       where: { id: input.emailTemplateId, tenantId },
-      select: { id: true, name: true, subject: true },
+      select: { id: true, name: true, subject: true, language: true, },
     }),
     tx.landingPage.findFirst({
       where: { id: input.landingPageId, tenantId },
-      select: { id: true, name: true, urlSlug: true },
+      select: { id: true, name: true, urlSlug: true, language: true, },
     }),
     tx.senderIdentity.findFirst({
       where: { id: input.senderIdentityId, tenantId },
@@ -63,6 +57,12 @@ async function assertPackageRefsBelongToTenant(tx, tenantId, input) {
   if (!template) throw new Error("Email template not found");
   if (!landingPage) throw new Error("Landing page not found");
   if (!senderIdentity) throw new Error("Sender identity not found");
+  if (template.language !== input.language) {
+    throw new Error("Email template language must match package language");
+  }
+  if (landingPage.language !== input.language) {
+    throw new Error("Landing page language must match package language");
+  }
 
   return { template, landingPage, senderIdentity };
 }
@@ -79,7 +79,7 @@ function toPackageResponse(row) {
     name: row.name,
     description: row.description,
     category: row.category,
-    difficulty: row.difficulty,
+    language: row.language,
     previewText: row.previewText,
     isActive: row.isActive,
     isApproved: row.isApproved,
@@ -94,6 +94,8 @@ function toPackageResponse(row) {
           id: row.emailTemplate.id,
           name: row.emailTemplate.name,
           subject: row.emailTemplate.subject,
+          language: row.emailTemplate.language,
+          language: row.landingPage.language,
         }
       : null,
     landingPage: row.landingPage
@@ -101,6 +103,8 @@ function toPackageResponse(row) {
           id: row.landingPage.id,
           name: row.landingPage.name,
           urlSlug: row.landingPage.urlSlug,
+          language: row.emailTemplate.language,
+          language: row.landingPage.language,          
         }
       : null,
     senderIdentity: row.senderIdentity
@@ -120,7 +124,7 @@ router.get("/", async (_req, res) => {
 
     const rows = await prisma.campaignPackage.findMany({
       where: { tenantId },
-      orderBy: [{ isApproved: "desc" }, { isActive: "desc" }, { name: "asc" }],
+      orderBy: [{ isApproved: "desc" }, { isActive: "desc" }, { language: "asc" }, { name: "asc" }],
       include: {
         _count: { select: { campaigns: true } },
         emailTemplate: { select: { id: true, name: true, subject: true } },

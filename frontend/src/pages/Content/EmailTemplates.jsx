@@ -18,8 +18,24 @@ const EMPTY_TEMPLATE = {
   name: "",
   subject: "",
   bodyHtml: "",
+  language: "CZ",
   tags: [],
 };
+
+const LANGUAGE_OPTIONS = [
+  { value: "CZ", label: "Čeština" },
+  { value: "EN", label: "English" },
+  { value: "DE", label: "Deutsch" },
+  { value: "FR", label: "Français" },
+  { value: "IT", label: "Italiano" },
+  { value: "ES", label: "Español" },
+  { value: "PL", label: "Polski" },
+  { value: "NL", label: "Nederlands" },
+  { value: "SK", label: "Slovenčina" },
+  { value: "HU", label: "Magyar" },
+  { value: "RO", label: "Română" },
+  { value: "PT", label: "Português" },
+];
 
 function EmailPreview({ html, className = "w-full h-[600px] rounded-lg border border-gray-200 bg-white" }) {
   const iframeRef = useRef(null);
@@ -308,7 +324,7 @@ export default function EmailTemplatesPage() {
 
     return templates.filter((tpl) => {
       const tags = Array.isArray(tpl.tags) ? tpl.tags.join(" ") : "";
-      const hay = `${tpl.name || ""} ${tpl.subject || ""} ${tags}`.toLowerCase();
+      const hay = `${tpl.name || ""} ${tpl.subject || ""} ${tags} ${tpl.language || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [templates, searchQuery]);
@@ -338,6 +354,7 @@ export default function EmailTemplatesPage() {
       name: `${tpl.name} (copy)`,
       subject: tpl.subject || "",
       bodyHtml: tpl.bodyHtml || "",
+      language: tpl.language || "CZ",
       tags: tpl.tags || [],
     });
     setActiveTab("html");
@@ -353,6 +370,7 @@ export default function EmailTemplatesPage() {
       name: tpl.name || "",
       subject: tpl.subject || "",
       bodyHtml: tpl.bodyHtml || "",
+      language: tpl.language || "CZ",
       tags: tpl.tags || [],
     });
     setActiveTab("html");
@@ -383,13 +401,19 @@ export default function EmailTemplatesPage() {
   async function handleSave() {
     const name = (form.name || "").trim();
     const subject = (form.subject || "").trim();
+    const language = String(form.language || "CZ").trim().toUpperCase();
 
     if (!name) {
       setError(t("content.emailTemplates.messages.nameRequired"));
       return;
     }
 
-    const duplicate = templates.find((tpl) => tpl.name.trim().toLowerCase() === name.toLowerCase() && tpl.id !== form.id);
+    const duplicate = templates.find(
+      (tpl) =>
+        tpl.name.trim().toLowerCase() === name.toLowerCase() &&
+        String(tpl.language || "CZ").trim().toUpperCase() === language &&
+        tpl.id !== form.id
+    );
 
     const ok = duplicate
       ? window.confirm(
@@ -418,6 +442,7 @@ export default function EmailTemplatesPage() {
         name,
         subject,
         bodyHtml: form.bodyHtml,
+        language,
         tags: tagsValue
           .split(",")
           .map((s) => s.trim())
@@ -433,6 +458,7 @@ export default function EmailTemplatesPage() {
           name: saved.name || "",
           subject: saved.subject || "",
           bodyHtml: saved.bodyHtml || "",
+          language: saved.language || "CZ",
           tags: saved.tags || [],
         });
       }
@@ -461,6 +487,7 @@ export default function EmailTemplatesPage() {
         name: `${form.name.trim() || t("content.emailTemplates.title")} (copy)`,
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
+        language: String(form.language || "CZ").trim().toUpperCase(),
         tags: tagsValue
           .split(",")
           .map((s) => s.trim())
@@ -476,6 +503,7 @@ export default function EmailTemplatesPage() {
           name: saved.name || "",
           subject: saved.subject || "",
           bodyHtml: saved.bodyHtml || "",
+          language: saved.language || "CZ",
           tags: saved.tags || [],
         });
       }
@@ -646,6 +674,10 @@ export default function EmailTemplatesPage() {
                       <div className="truncate font-medium text-gray-900">{tpl.name}</div>
                       <div className="truncate text-xs text-gray-500">{tpl.subject}</div>
                     </div>
+
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                      {tpl.language || "CZ"}
+                    </span>
                   </div>
 
                   <div
@@ -755,9 +787,11 @@ export default function EmailTemplatesPage() {
                 handleSave();
               }}
             >
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">{t("content.emailTemplates.fields.name")}</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    {t("content.emailTemplates.fields.name")}
+                  </label>
                   <input
                     type="text"
                     value={form.name}
@@ -767,13 +801,30 @@ export default function EmailTemplatesPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">{t("content.emailTemplates.fields.subject")}</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    {t("content.emailTemplates.fields.subject")}
+                  </label>
                   <input
                     type="text"
                     value={form.subject}
                     onChange={(e) => setField("subject", e.target.value)}
                     className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
                   />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Jazyk</label>
+                  <select
+                    value={form.language || "CZ"}
+                    onChange={(e) => setField("language", e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  >
+                    {LANGUAGE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

@@ -157,7 +157,7 @@ export function serializeCampaignForIntegration(row) {
           name: row.package.name,
           description: row.package.description || "",
           category: row.package.category || "",
-          difficulty: row.package.difficulty ?? 1,
+          language: row.package.language,
         }
       : null,
     emailTemplate: row.emailTemplate

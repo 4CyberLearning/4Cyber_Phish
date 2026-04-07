@@ -95,7 +95,7 @@ router.get("/campaigns/:id/report", async (req, res) => {
         name: campaign.package.name,
         description: campaign.package.description || "",
         category: campaign.package.category || "",
-        difficulty: campaign.package.difficulty ?? 1,
+        language: campaign.package.language,
       },
 
       emailTemplate: campaign.emailTemplate && {

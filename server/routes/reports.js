@@ -466,7 +466,7 @@ function buildRecentCampaignShape(row) {
           id: row.package.id,
           name: row.package.name,
           category: row.package.category || "",
-          difficulty: row.package.difficulty ?? 1,
+          language: row.package.language,
         }
       : null,
     totals: {

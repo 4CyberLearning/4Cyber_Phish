@@ -56,7 +56,7 @@ async function seedSampleContent(tenantId) {
       subject: "Quick check",
       bodyHtml: "<p>Ahoj, toto je ukázková šablona.</p>",
       tags: ["demo"],
-      difficulty: 1,
+      language: "CZ",
     },
     create: {
       tenantId,
@@ -64,7 +64,7 @@ async function seedSampleContent(tenantId) {
       subject: "Quick check",
       bodyHtml: "<p>Ahoj, toto je ukázková šablona.</p>",
       tags: ["demo"],
-      difficulty: 1,
+      language: "CZ",
     },
   });
 
@@ -75,6 +75,7 @@ async function seedSampleContent(tenantId) {
       name: "Simple LP",
       html: "<h2>Simulace – tréninkový obsah</h2>",
       tags: ["demo"],
+      language: "CZ",
     },
     create: {
       tenantId,
@@ -82,6 +83,7 @@ async function seedSampleContent(tenantId) {
       urlSlug: "lp-demo",
       html: "<h2>Simulace – tréninkový obsah</h2>",
       tags: ["demo"],
+      language: "CZ",
     },
   });
 }

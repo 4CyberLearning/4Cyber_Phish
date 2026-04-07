@@ -11,7 +11,7 @@ const EMPTY_FORM = {
   name: "",
   description: "",
   category: "",
-  difficulty: 1,
+  language: "CZ",
   previewText: "",
   isActive: true,
   isApproved: false,
@@ -19,6 +19,21 @@ const EMPTY_FORM = {
   landingPageId: "",
   senderIdentityId: "",
 };
+
+const LANGUAGE_OPTIONS = [
+  { value: "CZ", label: "Čeština" },
+  { value: "EN", label: "English" },
+  { value: "DE", label: "Deutsch" },
+  { value: "FR", label: "Français" },
+  { value: "IT", label: "Italiano" },
+  { value: "ES", label: "Español" },
+  { value: "PL", label: "Polski" },
+  { value: "NL", label: "Nederlands" },
+  { value: "SK", label: "Slovenčina" },
+  { value: "HU", label: "Magyar" },
+  { value: "RO", label: "Română" },
+  { value: "PT", label: "Português" },
+];
 
 function EmailPreview({ html, className = "h-[420px] w-full rounded-xl border border-slate-200 bg-white" }) {
   const iframeRef = useRef(null);
@@ -126,7 +141,7 @@ function PackageListCard({ item, active, onClick }) {
           </div>
         </div>
         <div className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
-          L{item.difficulty || 1}
+          {item.language || "CZ"}
         </div>
       </div>
 
@@ -218,7 +233,7 @@ export default function PackagesPage() {
       name: item?.name || "",
       description: item?.description || "",
       category: item?.category || "",
-      difficulty: Number(item?.difficulty || 1),
+      language: item?.language || "CZ",
       previewText: item?.previewText || "",
       isActive: item?.isActive !== false,
       isApproved: item?.isApproved === true,
@@ -236,10 +251,30 @@ export default function PackagesPage() {
   }
 
   function handleField(field, value) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      };
+
+      if (field === "language") {
+        const nextLanguage = String(value || "CZ").toUpperCase();
+
+        const currentTemplate = templates.find((item) => String(item.id) === String(prev.emailTemplateId));
+        const currentLandingPage = landingPages.find((item) => String(item.id) === String(prev.landingPageId));
+
+        if (currentTemplate && String(currentTemplate.language || "CZ").toUpperCase() !== nextLanguage) {
+          next.emailTemplateId = "";
+        }
+
+        if (currentLandingPage && String(currentLandingPage.language || "CZ").toUpperCase() !== nextLanguage) {
+          next.landingPageId = "";
+        }
+      }
+
+      return next;
+    });
+
     setSuccess(null);
     setError(null);
   }
@@ -255,10 +290,20 @@ export default function PackagesPage() {
     const q = query.trim().toLowerCase();
     if (!q) return packages;
     return packages.filter((item) => {
-      const hay = `${item.name || ""} ${item.description || ""} ${item.category || ""} ${item.previewText || ""}`.toLowerCase();
+      const hay = `${item.name || ""} ${item.description || ""} ${item.category || ""} ${item.previewText || ""} ${item.language || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [packages, query]);
+
+  const filteredTemplatesByLanguage = useMemo(() => {
+    const selectedLanguage = String(form.language || "CZ").toUpperCase();
+    return templates.filter((item) => String(item.language || "CZ").toUpperCase() === selectedLanguage);
+  }, [templates, form.language]);
+
+  const filteredLandingPagesByLanguage = useMemo(() => {
+    const selectedLanguage = String(form.language || "CZ").toUpperCase();
+    return landingPages.filter((item) => String(item.language || "CZ").toUpperCase() === selectedLanguage);
+  }, [landingPages, form.language]);
 
   const selectedTemplate = useMemo(
     () => templates.find((item) => String(item.id) === String(form.emailTemplateId)) || null,
@@ -285,7 +330,7 @@ export default function PackagesPage() {
       name: String(form.name || "").trim(),
       description: String(form.description || "").trim(),
       category: String(form.category || "").trim(),
-      difficulty: Number(form.difficulty || 1),
+      language: String(form.language || "CZ").trim().toUpperCase(),
       previewText: String(form.previewText || "").trim(),
       isActive: !!form.isActive,
       isApproved: !!form.isApproved,
@@ -309,7 +354,11 @@ export default function PackagesPage() {
         const next = exists
           ? prev.map((item) => (Number(item.id) === Number(saved.id) ? saved : item))
           : [saved, ...prev];
-        return next.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "cs"));
+        return next.sort((a, b) => {
+          const langCompare = String(a.language || "").localeCompare(String(b.language || ""), "cs");
+          if (langCompare !== 0) return langCompare;
+          return String(a.name || "").localeCompare(String(b.name || ""), "cs");
+        });
       });
       applyPackageToForm(saved);
     } catch (e) {
@@ -473,17 +522,17 @@ export default function PackagesPage() {
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Obtížnost</span>
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jazyk</span>
                 <select
-                  value={form.difficulty}
-                  onChange={(e) => handleField("difficulty", Number(e.target.value))}
+                  value={form.language || "CZ"}
+                  onChange={(e) => handleField("language", e.target.value)}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand-strong)] focus:ring-2 focus:ring-[var(--brand-soft)]"
                 >
-                  <option value={1}>1 — velmi lehká</option>
-                  <option value={2}>2 — lehká</option>
-                  <option value={3}>3 — střední</option>
-                  <option value={4}>4 — náročná</option>
-                  <option value={5}>5 — velmi náročná</option>
+                  {LANGUAGE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -518,7 +567,7 @@ export default function PackagesPage() {
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand-strong)] focus:ring-2 focus:ring-[var(--brand-soft)]"
                 >
                   <option value="">Vyber šablonu</option>
-                  {templates.map((item) => (
+                  {filteredTemplatesByLanguage.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
@@ -534,7 +583,7 @@ export default function PackagesPage() {
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand-strong)] focus:ring-2 focus:ring-[var(--brand-soft)]"
                 >
                   <option value="">Vyber landing page</option>
-                  {landingPages.map((item) => (
+                  {filteredLandingPagesByLanguage.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
@@ -598,7 +647,9 @@ export default function PackagesPage() {
                 <div>
                   <div className="text-sm font-semibold text-slate-900">E-mailová šablona</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {selectedTemplate ? `${selectedTemplate.name} · ${selectedTemplate.subject || "bez předmětu"}` : "Zatím není vybraná žádná šablona."}
+                    {selectedTemplate
+                      ? `${selectedTemplate.name} · ${selectedTemplate.subject || "bez předmětu"} · ${selectedTemplate.language || "CZ"}`
+                      : "Zatím není vybraná žádná šablona."}
                   </div>
                 </div>
                 {selectedTemplate?.tags?.length ? (
@@ -617,7 +668,9 @@ export default function PackagesPage() {
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Landing page</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {selectedLandingPage ? `${selectedLandingPage.name} · /lp/${selectedLandingPage.urlSlug}` : "Zatím není vybraná žádná landing page."}
+                    {selectedLandingPage
+                      ? `${selectedLandingPage.name} · /lp/${selectedLandingPage.urlSlug} · ${selectedLandingPage.language || "CZ"}`
+                      : "Zatím není vybraná žádná landing page."}
                   </div>
                 </div>
                 {selectedLandingPage?.tags?.length ? (
@@ -640,8 +693,8 @@ export default function PackagesPage() {
                 <div className="mt-1 text-sm font-semibold text-slate-900">{form.category || "Bez kategorie"}</div>
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Obtížnost</div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">Level {form.difficulty || 1}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Jazyk</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{form.language || "CZ"}</div>
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Identita</div>

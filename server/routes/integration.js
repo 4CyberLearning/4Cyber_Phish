@@ -45,7 +45,7 @@ function serializePackageForIntegration(row) {
     name: row.name,
     description: row.description || "",
     category: row.category || "",
-    difficulty: row.difficulty ?? 1,
+    language: row.language,
     previewText: row.previewText || "",
     isActive: row.isActive,
     isApproved: row.isApproved,
@@ -455,7 +455,7 @@ router.get("/packages", async (req, res) => {
 
     const rows = await prisma.campaignPackage.findMany({
       where: { tenantId, isActive: true, isApproved: true },
-      orderBy: [{ difficulty: "asc" }, { name: "asc" }],
+      orderBy: [{ language: "asc" }, { name: "asc" }],
       include: {
       emailTemplate: {
         select: {
@@ -463,6 +463,7 @@ router.get("/packages", async (req, res) => {
           name: true,
           subject: true,
           bodyHtml: true,
+          language: true,
         },
       },
       landingPage: {
@@ -471,6 +472,7 @@ router.get("/packages", async (req, res) => {
           name: true,
           urlSlug: true,
           html: true,
+          language: true,
         },
       },
       senderIdentity: {

@@ -12,6 +12,21 @@ datasource db {
  * ========= ENUMS =========
  */
 
+enum ContentLanguage {
+  CZ
+  EN
+  DE
+  FR
+  IT
+  ES
+  PL
+  NL
+  SK
+  HU
+  RO
+  PT
+}
+
 enum CampaignStatus {
   DRAFT
   SCHEDULED
@@ -90,7 +105,7 @@ model Tenant {
   senderDomains           SenderDomain[]
   allowedRecipientDomains AllowedRecipientDomain[]
 
-  integrationClients      IntegrationClient[]
+  integrationClients IntegrationClient[]
 }
 
 model SenderDomain {
@@ -130,19 +145,18 @@ model User {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-
-  email        String
-  passwordHash String?
-  firstName    String?
-  lastName     String?
-  fullName     String?
-  department   String?
-  role         String?
-  custom       Json?
-  isAdmin      Boolean  @default(false)
-  riskScore    Float    @default(0.0)
-  createdAt    DateTime @default(now())
-  isActive     Boolean @default(true)
+  email                String
+  passwordHash         String?
+  firstName            String?
+  lastName             String?
+  fullName             String?
+  department           String?
+  role                 String?
+  custom               Json?
+  isAdmin              Boolean  @default(false)
+  riskScore            Float    @default(0.0)
+  createdAt            DateTime @default(now())
+  isActive             Boolean  @default(true)
   externalUserPublicId String?
 
   // relations
@@ -153,22 +167,22 @@ model User {
   auditLogs     AuditLog[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, externalUserPublicId])
   @@index([externalUserPublicId])
   @@index([tenantId, isActive])
-  @@unique([tenantId, externalUserPublicId])  
 }
 
 model Group {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   tenantId    Int
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   members    GroupMember[]
-  targetedBy Campaign[] @relation("CampaignTargetGroup")
+  targetedBy Campaign[]    @relation("CampaignTargetGroup")
 
   @@unique([tenantId, name])
 }
@@ -193,19 +207,20 @@ model EmailTemplate {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name       String
-  subject    String
-  bodyHtml   String
-  tags       String[]
-  difficulty Int      @default(1)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  name      String
+  subject   String
+  bodyHtml  String
+  tags      String[]
+  language  ContentLanguage @default(CZ)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   // back-relations
   campaigns Campaign[]
   packages  CampaignPackage[] @relation("PackageEmailTemplate")
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, language, name])
+  @@index([tenantId, language, createdAt])
 }
 
 model SenderIdentity {
@@ -224,7 +239,7 @@ model SenderIdentity {
   senderDomainId Int
   senderDomain   SenderDomain @relation(fields: [senderDomainId], references: [id], onDelete: Cascade)
 
-  campaigns Campaign[] @relation("CampaignSenderIdentity")
+  campaigns Campaign[]        @relation("CampaignSenderIdentity")
   packages  CampaignPackage[] @relation("PackageSenderIdentity")
 
   @@unique([tenantId, name])
@@ -237,14 +252,17 @@ model LandingPage {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name      String
-  urlSlug   String   @unique
+  urlSlug   String          @unique
   html      String
   tags      String[]
-  createdAt DateTime @default(now())
+  language  ContentLanguage @default(CZ)
+  createdAt DateTime        @default(now())
 
   // back-relations
   campaigns Campaign[]
   packages  CampaignPackage[] @relation("PackageLandingPage")
+
+  @@index([tenantId, language, createdAt])
 }
 
 /**
@@ -259,10 +277,10 @@ model CampaignPackage {
   name        String
   description String?
   category    String?
-  difficulty  Int      @default(1)
+  language    ContentLanguage @default(CZ)
   previewText String?
-  isActive    Boolean  @default(true)
-  isApproved  Boolean  @default(false)
+  isActive    Boolean         @default(true)
+  isApproved  Boolean         @default(false)
 
   emailTemplateId Int
   emailTemplate   EmailTemplate @relation("PackageEmailTemplate", fields: [emailTemplateId], references: [id], onDelete: Restrict)
@@ -278,8 +296,8 @@ model CampaignPackage {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  @@unique([tenantId, name])
-  @@index([tenantId, isActive, isApproved])
+  @@unique([tenantId, language, name])
+  @@index([tenantId, language, isActive, isApproved])
 }
 
 model Campaign {
@@ -287,21 +305,21 @@ model Campaign {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name        String
-  description String?
-  scheduledAt DateTime
-  cutoffAt    DateTime?
-  startedAt   DateTime?
-  finishedAt  DateTime?
-  cancelledAt DateTime?
-  status      CampaignStatus    @default(SCHEDULED)
-  source      CampaignSource    @default(UNKNOWN)
-  targetType  CampaignTargetType @default(GROUP)
-  postSubmitActionType CampaignPostSubmitActionType @default(TRAINING_PAGE)
-  postSubmitRedirectUrl String?
-  recipientCountSnapshot Int    @default(0)
-  statusReason String?
-  finishReason String?
+  name                   String
+  description            String?
+  scheduledAt            DateTime
+  cutoffAt               DateTime?
+  startedAt              DateTime?
+  finishedAt             DateTime?
+  cancelledAt            DateTime?
+  status                 CampaignStatus               @default(SCHEDULED)
+  source                 CampaignSource               @default(UNKNOWN)
+  targetType             CampaignTargetType           @default(GROUP)
+  postSubmitActionType   CampaignPostSubmitActionType @default(TRAINING_PAGE)
+  postSubmitRedirectUrl  String?
+  recipientCountSnapshot Int                          @default(0)
+  statusReason           String?
+  finishReason           String?
 
   packageId Int?
   package   CampaignPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
@@ -315,13 +333,13 @@ model Campaign {
   senderIdentityId Int?
   senderIdentity   SenderIdentity? @relation("CampaignSenderIdentity", fields: [senderIdentityId], references: [id], onDelete: Restrict)
 
-  targetGroupId Int?
-  targetGroup   Group?                   @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
-  targetUsers   CampaignUser[]
-  interactions  Interaction[]
+  targetGroupId   Int?
+  targetGroup     Group?                   @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  targetUsers     CampaignUser[]
+  interactions    Interaction[]
   lifecycleEvents CampaignLifecycleEvent[]
-  createdAt     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   @@index([tenantId, status, scheduledAt])
   @@index([tenantId, status, cutoffAt])
@@ -337,11 +355,11 @@ model CampaignUser {
   trackingToken String @unique @default(uuid())
 
   // agregovaná data pro reporting (rychlé tabulky "Users" per kampaň)
-  sentAt      DateTime?
-  openedAt    DateTime?
-  clickedAt   DateTime?
-  submittedAt DateTime?
-  reportedAt  DateTime?
+  sentAt               DateTime?
+  openedAt             DateTime?
+  clickedAt            DateTime?
+  submittedAt          DateTime?
+  reportedAt           DateTime?
   externalUserPublicId String?
 
   campaign     Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -353,41 +371,41 @@ model CampaignUser {
 }
 
 model CampaignLifecycleEvent {
-  id        Int                       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   tenantId   Int
-  tenant     Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   campaignId Int
-  campaign   Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
-  type       CampaignLifecycleEventType
-  actorType  CampaignActorType         @default(SYSTEM)
-  actorUserId Int?
+  type            CampaignLifecycleEventType
+  actorType       CampaignActorType          @default(SYSTEM)
+  actorUserId     Int?
   actorExternalId String?
-  actorEmail  String?
-  actorName   String?
-  actorSource String?
-  reason     String?
-  meta       Json?
-  createdAt  DateTime                  @default(now())
+  actorEmail      String?
+  actorName       String?
+  actorSource     String?
+  reason          String?
+  meta            Json?
+  createdAt       DateTime                   @default(now())
 
   @@index([campaignId, createdAt])
   @@index([tenantId, createdAt])
 }
 
 model IntegrationClient {
-  id        Int      @id @default(autoincrement())
-  tenantId  Int
-  name      String
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  name     String
 
   // keyId.secret je token, do DB ukládáme jen hash
-  keyId     String   @unique
-  keyHash   String   @unique
+  keyId   String @unique
+  keyHash String @unique
 
-  createdAt DateTime @default(now())
-  revokedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
   lastUsedAt DateTime?
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
 }

@@ -5,6 +5,15 @@ import { getTenantId } from "../utils/tenantScope.js";
 import { sendMail } from "../utils/mailer.js";
 
 const router = Router();
+const ALLOWED_LANGUAGES = new Set(["CZ","EN","DE","FR","IT","ES","PL","NL","SK","HU","RO","PT"]);
+
+function normalizeLanguage(value) {
+  const normalized = String(value || "CZ").trim().toUpperCase();
+  if (!ALLOWED_LANGUAGES.has(normalized)) {
+    throw new Error("Invalid language");
+  }
+  return normalized;
+}
 
 // Prozatím používáme jediného tenanta "demo"
 
@@ -19,7 +28,7 @@ function normalizeTemplateInput(body = {}) {
     subject = "",
     bodyHtml = "",
     tags = [],
-    difficulty,
+    language,
   } = body;
 
   let tagsArr = [];
@@ -42,7 +51,7 @@ function normalizeTemplateInput(body = {}) {
     subject: String(subject).trim(),
     bodyHtml: bodyHtml || "",
     tags: tagsArr,
-    difficulty: difficultyNumber,
+    language: normalizeLanguage(body.language),
   };
 }
 
@@ -104,7 +113,7 @@ router.post("/", async (req, res) => {
         subject: data.subject,
         bodyHtml: data.bodyHtml,
         tags: data.tags,
-        difficulty: data.difficulty,
+        language: data.language,
       },
     });
 
@@ -145,7 +154,7 @@ router.put("/:id", async (req, res) => {
         subject: data.subject,
         bodyHtml: data.bodyHtml,
         tags: data.tags,
-        difficulty: data.difficulty,
+        language: data.language,
       },
     });
 
