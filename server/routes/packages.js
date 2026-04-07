@@ -4,6 +4,29 @@ import { getTenantId } from "../utils/tenantScope.js";
 
 const router = Router();
 
+const ALLOWED_LANGUAGES = new Set([
+  "CZ",
+  "EN",
+  "DE",
+  "FR",
+  "IT",
+  "ES",
+  "PL",
+  "NL",
+  "SK",
+  "HU",
+  "RO",
+  "PT",
+]);
+
+function normalizeLanguage(value) {
+  const normalized = String(value || "CZ").trim().toUpperCase();
+  if (!ALLOWED_LANGUAGES.has(normalized)) {
+    throw new Error("Invalid language");
+  }
+  return normalized;
+}
+
 function normalizePackageInput(body = {}) {
   const name = String(body.name || "").trim();
   const description = body.description != null ? String(body.description).trim() : null;
@@ -36,11 +59,11 @@ async function assertPackageRefsBelongToTenant(tx, tenantId, input) {
   const [template, landingPage, senderIdentity] = await Promise.all([
     tx.emailTemplate.findFirst({
       where: { id: input.emailTemplateId, tenantId },
-      select: { id: true, name: true, subject: true, language: true, },
+      select: { id: true, name: true, subject: true, language: true },
     }),
     tx.landingPage.findFirst({
       where: { id: input.landingPageId, tenantId },
-      select: { id: true, name: true, urlSlug: true, language: true, },
+      select: { id: true, name: true, urlSlug: true, language: true },
     }),
     tx.senderIdentity.findFirst({
       where: { id: input.senderIdentityId, tenantId },
@@ -57,9 +80,11 @@ async function assertPackageRefsBelongToTenant(tx, tenantId, input) {
   if (!template) throw new Error("Email template not found");
   if (!landingPage) throw new Error("Landing page not found");
   if (!senderIdentity) throw new Error("Sender identity not found");
+
   if (template.language !== input.language) {
     throw new Error("Email template language must match package language");
   }
+
   if (landingPage.language !== input.language) {
     throw new Error("Landing page language must match package language");
   }
@@ -95,7 +120,6 @@ function toPackageResponse(row) {
           name: row.emailTemplate.name,
           subject: row.emailTemplate.subject,
           language: row.emailTemplate.language,
-          language: row.landingPage.language,
         }
       : null,
     landingPage: row.landingPage
@@ -103,8 +127,7 @@ function toPackageResponse(row) {
           id: row.landingPage.id,
           name: row.landingPage.name,
           urlSlug: row.landingPage.urlSlug,
-          language: row.emailTemplate.language,
-          language: row.landingPage.language,          
+          language: row.landingPage.language,
         }
       : null,
     senderIdentity: row.senderIdentity
@@ -127,8 +150,8 @@ router.get("/", async (_req, res) => {
       orderBy: [{ isApproved: "desc" }, { isActive: "desc" }, { language: "asc" }, { name: "asc" }],
       include: {
         _count: { select: { campaigns: true } },
-        emailTemplate: { select: { id: true, name: true, subject: true } },
-        landingPage: { select: { id: true, name: true, urlSlug: true } },
+        emailTemplate: { select: { id: true, name: true, subject: true, language: true } },
+        landingPage: { select: { id: true, name: true, urlSlug: true, language: true } },
         senderIdentity: {
           select: {
             id: true,
@@ -161,8 +184,8 @@ router.get("/:id", async (req, res) => {
       where: { id, tenantId },
       include: {
         _count: { select: { campaigns: true } },
-        emailTemplate: { select: { id: true, name: true, subject: true } },
-        landingPage: { select: { id: true, name: true, urlSlug: true } },
+        emailTemplate: { select: { id: true, name: true, subject: true, language: true } },
+        landingPage: { select: { id: true, name: true, urlSlug: true, language: true } },
         senderIdentity: {
           select: {
             id: true,
@@ -204,8 +227,8 @@ router.post("/", async (req, res) => {
           name: input.name,
           description: input.description,
           category: input.category,
+          language: input.language,
           previewText: input.previewText,
-          difficulty: input.difficulty,
           isActive: input.isActive,
           isApproved: input.isApproved,
           emailTemplateId: input.emailTemplateId,
@@ -214,8 +237,8 @@ router.post("/", async (req, res) => {
         },
         include: {
           _count: { select: { campaigns: true } },
-          emailTemplate: { select: { id: true, name: true, subject: true } },
-          landingPage: { select: { id: true, name: true, urlSlug: true } },
+          emailTemplate: { select: { id: true, name: true, subject: true, language: true } },
+          landingPage: { select: { id: true, name: true, urlSlug: true, language: true } },
           senderIdentity: {
             select: {
               id: true,
@@ -269,8 +292,8 @@ router.put("/:id", async (req, res) => {
           name: input.name,
           description: input.description,
           category: input.category,
+          language: input.language,
           previewText: input.previewText,
-          difficulty: input.difficulty,
           isActive: input.isActive,
           isApproved: input.isApproved,
           emailTemplateId: input.emailTemplateId,
@@ -279,8 +302,8 @@ router.put("/:id", async (req, res) => {
         },
         include: {
           _count: { select: { campaigns: true } },
-          emailTemplate: { select: { id: true, name: true, subject: true } },
-          landingPage: { select: { id: true, name: true, urlSlug: true } },
+          emailTemplate: { select: { id: true, name: true, subject: true, language: true } },
+          landingPage: { select: { id: true, name: true, urlSlug: true, language: true } },
           senderIdentity: {
             select: {
               id: true,
