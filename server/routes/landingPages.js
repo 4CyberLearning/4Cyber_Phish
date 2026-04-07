@@ -20,7 +20,7 @@ function rewriteUploadsToSameOrigin(html = "") {
 }
 
 function normalizeLandingInput(body = {}) {
-  const { name = "", urlSlug = "", html = "", tags = [] } = body;
+  const { name = "", urlSlug = "", html = "", tags = [], language = "CZ" } = body;
 
   let tagsArr = [];
   if (Array.isArray(tags)) {
