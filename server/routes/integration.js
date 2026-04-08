@@ -57,6 +57,7 @@ function serializePackageForIntegration(row) {
           name: row.emailTemplate.name,
           subject: row.emailTemplate.subject,
           bodyHtml: row.emailTemplate.bodyHtml || "",
+          language: row.emailTemplate.language || row.language || "CZ",
         }
       : null,
     landingPage: row.landingPage
@@ -65,6 +66,7 @@ function serializePackageForIntegration(row) {
           name: row.landingPage.name,
           urlSlug: row.landingPage.urlSlug,
           html: row.landingPage.html || "",
+          language: row.landingPage.language || row.language || "CZ",
         }
       : null,
     senderIdentity: row.senderIdentity
@@ -512,6 +514,7 @@ router.get("/packages/:id", async (req, res) => {
           name: true,
           subject: true,
           bodyHtml: true,
+          language: true,
         },
       },
       landingPage: {
@@ -520,6 +523,7 @@ router.get("/packages/:id", async (req, res) => {
           name: true,
           urlSlug: true,
           html: true,
+          language: true,
         },
       },
       senderIdentity: {

@@ -165,6 +165,7 @@ export function serializeCampaignForIntegration(row) {
           id: row.emailTemplate.id,
           name: row.emailTemplate.name,
           subject: row.emailTemplate.subject,
+          language: row.emailTemplate.language || row.package?.language || "CZ",
         }
       : null,
     landingPage: row.landingPage
@@ -172,6 +173,7 @@ export function serializeCampaignForIntegration(row) {
           id: row.landingPage.id,
           name: row.landingPage.name,
           urlSlug: row.landingPage.urlSlug,
+          language: row.landingPage.language || row.package?.language || "CZ",
         }
       : null,
     senderIdentity: row.senderIdentity
