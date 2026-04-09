@@ -373,7 +373,7 @@ async function loadCampaignsForSummary(tenantId, from, to) {
           id: true,
           name: true,
           category: true,
-          difficulty: true,
+          language: true,
         },
       },
       targetGroup: { select: { name: true } },
@@ -390,6 +390,7 @@ async function loadCampaignsForSummary(tenantId, from, to) {
           subject: true,
           name: true,
           bodyHtml: true,
+          language: true,
         },
       },
       landingPage: {
@@ -397,6 +398,7 @@ async function loadCampaignsForSummary(tenantId, from, to) {
           name: true,
           urlSlug: true,
           html: true,
+          language: true,
         },
       },
       targetUsers: {
@@ -435,6 +437,11 @@ function buildRecentCampaignShape(row) {
     name: row.name || "Bez názvu",
     description: row.description || "",
     status: row.status || CampaignStatus.SCHEDULED,
+    language:
+      row.package?.language ||
+      row.emailTemplate?.language ||
+      row.landingPage?.language ||
+      "CZ",    
     audience: row?.targetGroup?.name || "Vybraná skupina",
     scheduledAt: toIso(row.scheduledAt),
     cutoffAt: toIso(row.cutoffAt),
@@ -452,6 +459,7 @@ function buildRecentCampaignShape(row) {
       ? {
           subject: row.emailTemplate.subject || row.emailTemplate.name || row.name || "—",
           bodyHtml: row.emailTemplate.bodyHtml || "",
+          language: row.emailTemplate.language || row.package?.language || "CZ",
         }
       : null,
     landingPage: row.landingPage
@@ -459,6 +467,7 @@ function buildRecentCampaignShape(row) {
           title: row.landingPage.name || "Landing page",
           slug: row.landingPage.urlSlug || "",
           html: row.landingPage.html || "",
+          language: row.landingPage.language || row.package?.language || "CZ",
         }
       : null,
     package: row.package
@@ -466,7 +475,7 @@ function buildRecentCampaignShape(row) {
           id: row.package.id,
           name: row.package.name,
           category: row.package.category || "",
-          language: row.package.language,
+          language: row.package.language || "CZ",
         }
       : null,
     totals: {
