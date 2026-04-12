@@ -136,8 +136,282 @@ function resolvePostSubmitConfig(body = {}, fallback = {}) {
   };
 }
 
+function toClientRecipientDomain(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    description: row.label ?? null,
+  };
+}
 
-// PUT /api/integration/recipients
+function toClientSenderDomain(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    description: row.label ?? null,
+  };
+}
+
+function normalizeManagedDomain(rawValue) {
+  let rawDomain = String(rawValue || "").trim().toLowerCase();
+  if (!rawDomain) throw new Error("Domain is required");
+
+  rawDomain = rawDomain
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/:.+$/, "");
+
+  if (!rawDomain.includes(".")) {
+    throw new Error("Invalid domain");
+  }
+
+  return rawDomain;
+}
+
+function normalizeRecipientDomainInput(body = {}) {
+  const domain = normalizeManagedDomain(body.domain);
+  const labelRaw = body.label ?? body.description ?? null;
+  const label = labelRaw ? String(labelRaw).trim() : null;
+  return { domain, label };
+}
+
+function normalizeSenderDomainInput(body = {}) {
+  const domain = normalizeManagedDomain(body.domain);
+  const labelRaw = body.label ?? body.description ?? null;
+  const label = labelRaw ? String(labelRaw).trim() : null;
+  const isDefault = Boolean(body.isDefault);
+  return { domain, label, isDefault };
+}
+
+function isUniqueConflict(err) {
+  return err?.code === "P2002";
+}
+
+// GET /api/integration/recipient-domains
+router.get("/recipient-domains", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const list = await prisma.allowedRecipientDomain.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({ items: list.map(toClientRecipientDomain) });
+  } catch (err) {
+    console.error("GET /api/integration/recipient-domains error", err);
+    res.status(500).json({ error: err?.message || "Failed to load recipient domains" });
+  }
+});
+
+// POST /api/integration/recipient-domains
+router.post("/recipient-domains", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const input = normalizeRecipientDomainInput(req.body || {});
+    const created = await prisma.allowedRecipientDomain.create({
+      data: {
+        tenantId,
+        domain: input.domain,
+        label: input.label,
+      },
+    });
+
+    res.status(201).json(toClientRecipientDomain(created));
+  } catch (err) {
+    console.error("POST /api/integration/recipient-domains error", err);
+    if (isUniqueConflict(err)) {
+      return res.status(409).json({ error: "Recipient domain already exists" });
+    }
+    res.status(400).json({ error: err?.message || "Failed to create recipient domain" });
+  }
+});
+
+// PUT /api/integration/recipient-domains/:id
+router.put("/recipient-domains/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const existing = await prisma.allowedRecipientDomain.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) return res.status(404).json({ error: "Recipient domain not found" });
+
+    const input = normalizeRecipientDomainInput(req.body || {});
+    const updated = await prisma.allowedRecipientDomain.update({
+      where: { id },
+      data: {
+        domain: input.domain,
+        label: input.label,
+      },
+    });
+
+    res.json(toClientRecipientDomain(updated));
+  } catch (err) {
+    console.error("PUT /api/integration/recipient-domains/:id error", err);
+    if (isUniqueConflict(err)) {
+      return res.status(409).json({ error: "Recipient domain already exists" });
+    }
+    res.status(400).json({ error: err?.message || "Failed to update recipient domain" });
+  }
+});
+
+// DELETE /api/integration/recipient-domains/:id
+router.delete("/recipient-domains/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const existing = await prisma.allowedRecipientDomain.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) return res.status(404).json({ error: "Recipient domain not found" });
+
+    await prisma.allowedRecipientDomain.delete({ where: { id } });
+    res.status(204).end();
+  } catch (err) {
+    console.error("DELETE /api/integration/recipient-domains/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to delete recipient domain" });
+  }
+});
+
+// GET /api/integration/sender-domains
+router.get("/sender-domains", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const list = await prisma.senderDomain.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({ items: list.map(toClientSenderDomain) });
+  } catch (err) {
+    console.error("GET /api/integration/sender-domains error", err);
+    res.status(500).json({ error: err?.message || "Failed to load sender domains" });
+  }
+});
+
+// POST /api/integration/sender-domains
+router.post("/sender-domains", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const input = normalizeSenderDomainInput(req.body || {});
+    const created = await prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.senderDomain.updateMany({
+          where: { tenantId },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.senderDomain.create({
+        data: {
+          tenantId,
+          domain: input.domain,
+          label: input.label,
+          isDefault: input.isDefault,
+        },
+      });
+    });
+
+    res.status(201).json(toClientSenderDomain(created));
+  } catch (err) {
+    console.error("POST /api/integration/sender-domains error", err);
+    if (isUniqueConflict(err)) {
+      return res.status(409).json({ error: "Sender domain already exists" });
+    }
+    res.status(400).json({ error: err?.message || "Failed to create sender domain" });
+  }
+});
+
+// PUT /api/integration/sender-domains/:id
+router.put("/sender-domains/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const existing = await prisma.senderDomain.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) return res.status(404).json({ error: "Sender domain not found" });
+
+    const input = normalizeSenderDomainInput(req.body || {});
+    const updated = await prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.senderDomain.updateMany({
+          where: { tenantId },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.senderDomain.update({
+        where: { id },
+        data: {
+          domain: input.domain,
+          label: input.label,
+          isDefault: input.isDefault,
+        },
+      });
+    });
+
+    res.json(toClientSenderDomain(updated));
+  } catch (err) {
+    console.error("PUT /api/integration/sender-domains/:id error", err);
+    if (isUniqueConflict(err)) {
+      return res.status(409).json({ error: "Sender domain already exists" });
+    }
+    res.status(400).json({ error: err?.message || "Failed to update sender domain" });
+  }
+});
+
+// DELETE /api/integration/sender-domains/:id
+router.delete("/sender-domains/:id", async (req, res) => {
+  try {
+    const tenantId = req.integration?.tenantId;
+    if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const existing = await prisma.senderDomain.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) return res.status(404).json({ error: "Sender domain not found" });
+
+    const identitiesCount = await prisma.senderIdentity.count({
+      where: { senderDomainId: id, tenantId },
+    });
+    if (identitiesCount > 0) {
+      return res.status(400).json({
+        error: "Domain is used by sender identities. Update or delete identities first.",
+      });
+    }
+
+    await prisma.senderDomain.delete({ where: { id } });
+    res.status(204).end();
+  } catch (err) {
+    console.error("DELETE /api/integration/sender-domains/:id error", err);
+    res.status(500).json({ error: err?.message || "Failed to delete sender domain" });
+  }
+});
+
 // PUT /api/integration/recipients
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
