@@ -636,6 +636,7 @@ router.post("/groups", async (req, res) => {
 router.put("/groups/:id", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
@@ -645,7 +646,10 @@ router.put("/groups/:id", async (req, res) => {
     const description = String(req.body?.description || "").trim();
     if (!name) return res.status(400).json({ error: "Group name is required" });
 
-    const existing = await prisma.group.findFirst({ where: { id, tenantId }, select: { id: true } });
+    const existing = await prisma.group.findFirst({
+      where: { id, tenantId, integrationCompanyScope },
+      select: { id: true },
+    });
     if (!existing) return res.status(404).json({ error: "Group not found" });
 
     const updated = await prisma.group.update({
@@ -663,7 +667,7 @@ router.put("/groups/:id", async (req, res) => {
     res.json(serializeGroup(updated));
   } catch (err) {
     console.error("PUT /api/integration/groups/:id error", err);
-    res.status(500).json({ error: err?.message || "Failed to update group" });
+    res.status(err?.status || 500).json({ error: err?.message || "Failed to update group" });
   }
 });
 
