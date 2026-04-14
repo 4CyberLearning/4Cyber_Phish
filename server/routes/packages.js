@@ -146,7 +146,7 @@ router.get("/", async (_req, res) => {
     const tenantId = await getTenantId();
 
     const rows = await prisma.campaignPackage.findMany({
-      where: { tenantId, integrationCompanyScope },
+      where: { tenantId },
       orderBy: [{ isApproved: "desc" }, { isActive: "desc" }, { language: "asc" }, { name: "asc" }],
       include: {
         _count: { select: { campaigns: true } },

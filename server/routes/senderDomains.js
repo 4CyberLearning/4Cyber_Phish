@@ -41,7 +41,7 @@ router.get("/sender-domains", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const list = await prisma.senderDomain.findMany({
-      where: { tenantId, integrationCompanyScope },
+      where: { tenantId },
       orderBy: { createdAt: "asc" },
     });
     res.json(list.map(toClientSenderDomain));
@@ -62,7 +62,7 @@ router.post("/sender-domains", async (req, res) => {
     const created = await prisma.$transaction(async (tx) => {
       if (input.isDefault) {
         await tx.senderDomain.updateMany({
-          where: { tenantId, integrationCompanyScope },
+          where: { tenantId },
           data: { isDefault: false },
         });
       }
@@ -106,7 +106,7 @@ router.put("/sender-domains/:id", async (req, res) => {
     const updated = await prisma.$transaction(async (tx) => {
       if (input.isDefault) {
         await tx.senderDomain.updateMany({
-          where: { tenantId, integrationCompanyScope },
+          where: { tenantId },
           data: { isDefault: false },
         });
       }

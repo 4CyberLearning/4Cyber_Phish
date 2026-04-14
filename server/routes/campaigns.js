@@ -292,7 +292,7 @@ router.get("/campaigns", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const rows = await prisma.campaign.findMany({
-      where: { tenantId, integrationCompanyScope },
+      where: { tenantId },
       include: campaignAdminInclude,
       orderBy: [{ scheduledAt: "desc" }, { id: "desc" }],
     });
