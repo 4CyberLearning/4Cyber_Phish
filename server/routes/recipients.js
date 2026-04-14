@@ -74,7 +74,7 @@ function domainOfEmail(email) {
 async function assertRecipientEmailAllowed(tenantId, email) {
   // Backward compatible: pokud není nastaven žádný allowlist, neblokuj.
   const allowlistCount = await prisma.allowedRecipientDomain.count({
-    where: { tenantId },
+    where: { tenantId, integrationCompanyScope },
   });
   if (allowlistCount === 0) return;
 
@@ -115,7 +115,7 @@ router.get("/groups", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const groups = await prisma.group.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       orderBy: { name: "asc" },
       include: {
         _count: { select: { members: true } },

@@ -39,7 +39,7 @@ router.get("/recipient-domains", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const list = await prisma.allowedRecipientDomain.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       orderBy: { createdAt: "asc" },
     });
     res.json(list.map(toClient));

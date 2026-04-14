@@ -34,7 +34,7 @@ router.get("/users", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const users = await prisma.user.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       select: USER_PUBLIC_SELECT,
       orderBy: { createdAt: "desc" },
     });
@@ -187,7 +187,7 @@ router.get("/groups", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const groups = await prisma.group.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       include: {
         _count: { select: { members: true } },
       },

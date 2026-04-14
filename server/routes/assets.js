@@ -49,7 +49,7 @@ router.get("/", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const assets = await prisma.asset.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       orderBy: { createdAt: "desc" },
     });
     res.json(assets);

@@ -59,7 +59,7 @@ router.get("/sender-identities", async (_req, res) => {
   try {
     const tenantId = await getTenantId();
     const list = await prisma.senderIdentity.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       orderBy: { createdAt: "asc" },
       include: {
         senderDomain: true,
@@ -90,7 +90,7 @@ router.post("/sender-identities", async (req, res) => {
 
       if (input.isDefault) {
         await tx.senderIdentity.updateMany({
-          where: { tenantId },
+          where: { tenantId, integrationCompanyScope },
           data: { isDefault: false },
         });
       }
@@ -147,7 +147,7 @@ router.put("/sender-identities/:id", async (req, res) => {
 
       if (input.isDefault) {
         await tx.senderIdentity.updateMany({
-          where: { tenantId },
+          where: { tenantId, integrationCompanyScope },
           data: { isDefault: false },
         });
       }

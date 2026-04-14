@@ -25,7 +25,7 @@ async function buildSendPolicy(tenantId) {
   const envAllowedFromDomains = toSet(process.env.ALLOWED_FROM_DOMAINS || "");
 
   const dbDomains = await prisma.allowedRecipientDomain.findMany({
-    where: { tenantId },
+    where: { tenantId, integrationCompanyScope },
     select: { domain: true },
     orderBy: { createdAt: "asc" },
   });

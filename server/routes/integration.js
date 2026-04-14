@@ -19,6 +19,22 @@ import {
 
 const router = express.Router();
 
+function getIntegrationCompanyScope(req) {
+  const scope = String(
+    req.headers["x-integration-company-id"] ??
+    req.integration?.companyScope ??
+    ""
+  ).trim();
+
+  if (!scope) {
+    const err = new Error("Missing integration company scope");
+    err.status = 400;
+    throw err;
+  }
+
+  return scope;
+}
+
 function serializeGroup(group) {
   return {
     id: group.id,
@@ -191,17 +207,18 @@ function isUniqueConflict(err) {
 router.get("/recipient-domains", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const list = await prisma.allowedRecipientDomain.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: "asc" },
+      where: { tenantId, integrationCompanyScope },
+      orderBy: { domain: "asc" },
     });
 
     res.json({ items: list.map(toClientRecipientDomain) });
   } catch (err) {
     console.error("GET /api/integration/recipient-domains error", err);
-    res.status(500).json({ error: err?.message || "Failed to load recipient domains" });
+    res.status(err?.status || 500).json({ error: err?.message || "Failed to load recipient domains" });
   }
 });
 
@@ -209,12 +226,14 @@ router.get("/recipient-domains", async (req, res) => {
 router.post("/recipient-domains", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const input = normalizeRecipientDomainInput(req.body || {});
     const created = await prisma.allowedRecipientDomain.create({
       data: {
         tenantId,
+        integrationCompanyScope,
         domain: input.domain,
         label: input.label,
       },
@@ -226,7 +245,7 @@ router.post("/recipient-domains", async (req, res) => {
     if (isUniqueConflict(err)) {
       return res.status(409).json({ error: "Recipient domain already exists" });
     }
-    res.status(400).json({ error: err?.message || "Failed to create recipient domain" });
+    res.status(err?.status || 400).json({ error: err?.message || "Failed to create recipient domain" });
   }
 });
 
@@ -234,13 +253,14 @@ router.post("/recipient-domains", async (req, res) => {
 router.put("/recipient-domains/:id", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
 
     const existing = await prisma.allowedRecipientDomain.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, integrationCompanyScope },
     });
     if (!existing) return res.status(404).json({ error: "Recipient domain not found" });
 
@@ -259,7 +279,7 @@ router.put("/recipient-domains/:id", async (req, res) => {
     if (isUniqueConflict(err)) {
       return res.status(409).json({ error: "Recipient domain already exists" });
     }
-    res.status(400).json({ error: err?.message || "Failed to update recipient domain" });
+    res.status(err?.status || 400).json({ error: err?.message || "Failed to update recipient domain" });
   }
 });
 
@@ -267,13 +287,14 @@ router.put("/recipient-domains/:id", async (req, res) => {
 router.delete("/recipient-domains/:id", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
 
     const existing = await prisma.allowedRecipientDomain.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, integrationCompanyScope },
     });
     if (!existing) return res.status(404).json({ error: "Recipient domain not found" });
 
@@ -281,7 +302,7 @@ router.delete("/recipient-domains/:id", async (req, res) => {
     res.status(204).end();
   } catch (err) {
     console.error("DELETE /api/integration/recipient-domains/:id error", err);
-    res.status(500).json({ error: err?.message || "Failed to delete recipient domain" });
+    res.status(err?.status || 500).json({ error: err?.message || "Failed to delete recipient domain" });
   }
 });
 
@@ -415,6 +436,7 @@ router.delete("/sender-domains/:id", async (req, res) => {
 // PUT /api/integration/recipients
 router.put("/recipients", async (req, res) => {
   const tenantId = req.integration?.tenantId;
+  const integrationCompanyScope = getIntegrationCompanyScope(req);
   if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
   const fullSync = !!req.body?.fullSync;
@@ -453,12 +475,20 @@ router.put("/recipients", async (req, res) => {
     keepPublicIds.push(u.userPublicId);
 
     const byPublicId = await prisma.user.findFirst({
-      where: { tenantId, externalUserPublicId: u.userPublicId },
+      where: {
+        tenantId,
+        integrationCompanyScope,
+        externalUserPublicId: u.userPublicId,
+      },
       select: { id: true, email: true, externalUserPublicId: true },
     });
 
     const byEmail = await prisma.user.findFirst({
-      where: { tenantId, email: u.email },
+      where: {
+        tenantId,
+        integrationCompanyScope,
+        email: u.email,
+      },
       select: { id: true, email: true, externalUserPublicId: true },
     });
 
@@ -481,6 +511,7 @@ router.put("/recipients", async (req, res) => {
       lastName: u.lastName,
       fullName: buildFullName(u.firstName, u.lastName, u.email),
       isActive: u.isActive,
+      integrationCompanyScope,
     };
 
     const user = target
@@ -518,6 +549,7 @@ router.put("/recipients", async (req, res) => {
     const r = await prisma.user.updateMany({
       where: {
         tenantId,
+        integrationCompanyScope,
         isActive: true,
         AND: [
           { externalUserPublicId: { not: null } },
@@ -532,6 +564,7 @@ router.put("/recipients", async (req, res) => {
   res.json({
     ok: true,
     tenantId,
+    integrationCompanyScope,
     fullSync,
     received: items.length,
     valid: normalized.length,
@@ -547,9 +580,9 @@ router.get("/groups", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
-
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     const groups = await prisma.group.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       orderBy: { name: "asc" },
       include: {
         _count: { select: { members: true } },
@@ -570,6 +603,7 @@ router.get("/groups", async (req, res) => {
 router.post("/groups", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const name = String(req.body?.name || "").trim();
@@ -577,7 +611,12 @@ router.post("/groups", async (req, res) => {
     if (!name) return res.status(400).json({ error: "Group name is required" });
 
     const created = await prisma.group.create({
-      data: { tenantId, name, description: description || null },
+      data: {
+        tenantId,
+        integrationCompanyScope,
+        name,
+        description: description || null,
+      },
       include: {
         _count: { select: { members: true } },
         members: {
@@ -631,12 +670,16 @@ router.put("/groups/:id", async (req, res) => {
 router.delete("/groups/:id", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid id" });
 
-    const existing = await prisma.group.findFirst({ where: { id, tenantId }, select: { id: true } });
+    const existing = await prisma.group.findFirst({
+      where: { id, tenantId, integrationCompanyScope },
+      select: { id: true },
+    });
     if (!existing) return res.status(404).json({ error: "Group not found" });
 
     await prisma.groupMember.deleteMany({ where: { groupId: id } });
@@ -651,6 +694,7 @@ router.delete("/groups/:id", async (req, res) => {
 router.post("/groups/:id/members", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const groupId = Number(req.params.id);
@@ -658,8 +702,14 @@ router.post("/groups/:id/members", async (req, res) => {
     if (!Number.isInteger(groupId) || !userPublicId) return res.status(400).json({ error: "Invalid input" });
 
     const [group, user] = await Promise.all([
-      prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }),
-      prisma.user.findFirst({ where: { tenantId, externalUserPublicId: userPublicId }, select: { id: true } }),
+      prisma.group.findFirst({
+        where: { id: groupId, tenantId, integrationCompanyScope },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({
+        where: { tenantId, integrationCompanyScope, externalUserPublicId: userPublicId },
+        select: { id: true },
+      }),
     ]);
     if (!group) return res.status(404).json({ error: "Group not found" });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -691,6 +741,7 @@ router.post("/groups/:id/members", async (req, res) => {
 router.delete("/groups/:id/members/:userPublicId", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const groupId = Number(req.params.id);
@@ -698,8 +749,14 @@ router.delete("/groups/:id/members/:userPublicId", async (req, res) => {
     if (!Number.isInteger(groupId) || !userPublicId) return res.status(400).json({ error: "Invalid input" });
 
     const [group, user] = await Promise.all([
-      prisma.group.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }),
-      prisma.user.findFirst({ where: { tenantId, externalUserPublicId: userPublicId }, select: { id: true } }),
+      prisma.group.findFirst({
+        where: { id: groupId, tenantId, integrationCompanyScope },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({
+        where: { tenantId, integrationCompanyScope, externalUserPublicId: userPublicId },
+        select: { id: true },
+      }),
     ]);
     if (!group) return res.status(404).json({ error: "Group not found" });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -824,10 +881,11 @@ router.get("/packages/:id", async (req, res) => {
 router.get("/campaigns", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const items = await prisma.campaign.findMany({
-      where: { tenantId },
+      where: { tenantId, integrationCompanyScope },
       include: campaignIntegrationInclude,
       orderBy: [{ scheduledAt: "desc" }, { id: "desc" }],
       take: 100,
@@ -843,13 +901,14 @@ router.get("/campaigns", async (req, res) => {
 router.get("/campaigns/:id", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
 
     const row = await prisma.campaign.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, integrationCompanyScope },
       include: campaignIntegrationInclude,
     });
 
@@ -864,6 +923,7 @@ router.get("/campaigns/:id", async (req, res) => {
 router.post("/campaigns", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const packageId = Number(req.body?.packageId);
@@ -899,7 +959,7 @@ router.post("/campaigns", async (req, res) => {
         },
       }),
       prisma.group.findFirst({
-        where: { id: targetGroupId, tenantId },
+        where: { id: targetGroupId, tenantId, integrationCompanyScope },
         include: {
           members: {
             include: { user: true },
@@ -923,6 +983,7 @@ router.post("/campaigns", async (req, res) => {
     const created = await prisma.campaign.create({
       data: {
         tenantId,
+        integrationCompanyScope,
         name: buildCampaignName({
           name: req.body?.name,
           packageName: pkg.name,
@@ -991,6 +1052,7 @@ router.post("/campaigns", async (req, res) => {
 router.post("/campaigns/:id/cancel", async (req, res) => {
   try {
     const tenantId = req.integration?.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     if (!tenantId) return res.status(401).json({ error: "Missing tenant scope" });
 
     const id = Number(req.params.id);
@@ -1004,7 +1066,7 @@ router.post("/campaigns/:id/cancel", async (req, res) => {
     const now = new Date();
 
     const campaign = await prisma.campaign.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, integrationCompanyScope },
       include: campaignIntegrationInclude,
     });
 

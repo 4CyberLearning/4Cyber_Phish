@@ -124,16 +124,18 @@ model SenderDomain {
 }
 
 model AllowedRecipientDomain {
-  id       Int    @id @default(autoincrement())
-  tenantId Int
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                      Int    @id @default(autoincrement())
+  tenantId                Int
+  tenant                  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  domain    String
-  label     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  integrationCompanyScope String   @default("__legacy__")
+  domain                  String
+  label                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  @@unique([tenantId, domain])
+  @@index([tenantId, integrationCompanyScope])
+  @@unique([tenantId, integrationCompanyScope, domain])
 }
 
 /**
@@ -145,19 +147,20 @@ model User {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  email                String
-  passwordHash         String?
-  firstName            String?
-  lastName             String?
-  fullName             String?
-  department           String?
-  role                 String?
-  custom               Json?
-  isAdmin              Boolean  @default(false)
-  riskScore            Float    @default(0.0)
-  createdAt            DateTime @default(now())
-  isActive             Boolean  @default(true)
-  externalUserPublicId String?
+  integrationCompanyScope String   @default("__legacy__")
+  email                   String
+  passwordHash            String?
+  firstName               String?
+  lastName                String?
+  fullName                String?
+  department              String?
+  role                    String?
+  custom                  Json?
+  isAdmin                 Boolean  @default(false)
+  riskScore               Float    @default(0.0)
+  createdAt               DateTime @default(now())
+  isActive                Boolean  @default(true)
+  externalUserPublicId    String?
 
   // relations
   groupLinks    GroupMember[]
@@ -166,25 +169,27 @@ model User {
   campaignLinks CampaignUser[]
   auditLogs     AuditLog[]
 
-  @@unique([tenantId, email])
-  @@unique([tenantId, externalUserPublicId])
-  @@index([externalUserPublicId])
-  @@index([tenantId, isActive])
+  @@unique([tenantId, integrationCompanyScope, email])
+  @@unique([tenantId, integrationCompanyScope, externalUserPublicId])
+  @@index([tenantId, integrationCompanyScope, externalUserPublicId])
+  @@index([tenantId, integrationCompanyScope, isActive])
 }
 
 model Group {
-  id          Int      @id @default(autoincrement())
-  tenantId    Int
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id                      Int      @id @default(autoincrement())
+  tenantId                Int
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integrationCompanyScope String   @default("__legacy__")
+  name                    String
+  description             String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @default(now()) @updatedAt
 
   members    GroupMember[]
-  targetedBy Campaign[]    @relation("CampaignTargetGroup")
+  targetedBy Campaign[] @relation("CampaignTargetGroup")
 
-  @@unique([tenantId, name])
+  @@index([tenantId, integrationCompanyScope])
+  @@unique([tenantId, integrationCompanyScope, name])
 }
 
 model GroupMember {
@@ -305,21 +310,22 @@ model Campaign {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name                   String
-  description            String?
-  scheduledAt            DateTime
-  cutoffAt               DateTime?
-  startedAt              DateTime?
-  finishedAt             DateTime?
-  cancelledAt            DateTime?
-  status                 CampaignStatus               @default(SCHEDULED)
-  source                 CampaignSource               @default(UNKNOWN)
-  targetType             CampaignTargetType           @default(GROUP)
-  postSubmitActionType   CampaignPostSubmitActionType @default(TRAINING_PAGE)
-  postSubmitRedirectUrl  String?
-  recipientCountSnapshot Int                          @default(0)
-  statusReason           String?
-  finishReason           String?
+  integrationCompanyScope String                     @default("__legacy__")
+  name                    String
+  description             String?
+  scheduledAt             DateTime
+  cutoffAt                DateTime?
+  startedAt               DateTime?
+  finishedAt              DateTime?
+  cancelledAt             DateTime?
+  status                  CampaignStatus            @default(SCHEDULED)
+  source                  CampaignSource            @default(UNKNOWN)
+  targetType              CampaignTargetType        @default(GROUP)
+  postSubmitActionType    CampaignPostSubmitActionType @default(TRAINING_PAGE)
+  postSubmitRedirectUrl   String?
+  recipientCountSnapshot  Int                       @default(0)
+  statusReason            String?
+  finishReason            String?
 
   packageId Int?
   package   CampaignPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
@@ -333,16 +339,17 @@ model Campaign {
   senderIdentityId Int?
   senderIdentity   SenderIdentity? @relation("CampaignSenderIdentity", fields: [senderIdentityId], references: [id], onDelete: Restrict)
 
-  targetGroupId   Int?
-  targetGroup     Group?                   @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  targetGroupId Int?
+  targetGroup   Group? @relation("CampaignTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+
   targetUsers     CampaignUser[]
   interactions    Interaction[]
   lifecycleEvents CampaignLifecycleEvent[]
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@index([tenantId, status, scheduledAt])
-  @@index([tenantId, status, cutoffAt])
+  @@index([tenantId, integrationCompanyScope, status, scheduledAt])
+  @@index([tenantId, integrationCompanyScope, status, cutoffAt])
 }
 
 model CampaignUser {
