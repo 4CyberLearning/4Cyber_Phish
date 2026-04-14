@@ -4,6 +4,22 @@ import prisma from "../db/prisma.js";
 
 const router = express.Router();
 
+function getIntegrationCompanyScope(req) {
+  const scope = String(
+    req.headers["x-integration-company-id"] ??
+    req.integration?.companyScope ??
+    ""
+  ).trim();
+
+  if (!scope) {
+    const err = new Error("Missing integration company scope");
+    err.status = 400;
+    throw err;
+  }
+
+  return scope;
+}
+
 function parseRange(req) {
   const now = new Date();
   const range = String(req.query.range || "90d").trim();
@@ -132,10 +148,13 @@ function avgReportTimeLabel(samples = []) {
   return `${hours} h ${minutes} min`;
 }
 
-async function loadRowsForTenant(tenantId, from, to) {
+async function loadRowsForTenant(tenantId, integrationCompanyScope, from, to) {
   return prisma.campaignUser.findMany({
     where: {
-      campaign: { tenantId },
+      campaign: {
+        tenantId,
+        integrationCompanyScope,
+      },
       sentAt: { gte: from, lt: to },
     },
     select: {
@@ -331,10 +350,11 @@ function aggregateRows(rows = []) {
   return { totals, users };
 }
 
-async function loadCampaignsForSummary(tenantId, from, to) {
+async function loadCampaignsForSummary(tenantId, integrationCompanyScope, from, to) {
   return prisma.campaign.findMany({
     where: {
       tenantId,
+      integrationCompanyScope,
       OR: [
         { createdAt: { gte: from, lt: to } },
         { scheduledAt: { gte: from, lt: to } },
@@ -588,14 +608,16 @@ function sortUsers(items = [], sort = "riskScore_desc") {
 router.get("/summary", async (req, res) => {
   try {
     const tenantId = req.integration.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     const { from, to, range } = parseRange(req);
 
     const [rows, campaignRows, nextScheduled] = await Promise.all([
-      loadRowsForTenant(tenantId, from, to),
-      loadCampaignsForSummary(tenantId, from, to),
+      loadRowsForTenant(tenantId, integrationCompanyScope, from, to),
+      loadCampaignsForSummary(tenantId, integrationCompanyScope, from, to),
       prisma.campaign.findFirst({
         where: {
           tenantId,
+          integrationCompanyScope,
           scheduledAt: { gt: new Date() },
           status: CampaignStatus.SCHEDULED,
         },
@@ -652,13 +674,14 @@ router.get("/summary", async (req, res) => {
 router.get("/users", async (req, res) => {
   try {
     const tenantId = req.integration.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     const { from, to, range } = parseRange(req);
 
     const page = clampInt(req.query.page, 1, 1, 100000);
     const pageSize = clampInt(req.query.pageSize, 50, 10, 200);
     const sort = String(req.query.sort || "riskScore_desc").trim();
 
-    const rows = await loadRowsForTenant(tenantId, from, to);
+    const rows = await loadRowsForTenant(tenantId, integrationCompanyScope, from, to);
     const { users } = aggregateRows(rows);
 
     const sorted = sortUsers(users, sort);
@@ -683,12 +706,16 @@ router.get("/users", async (req, res) => {
 router.get("/users/:userPublicId", async (req, res) => {
   try {
     const tenantId = req.integration.tenantId;
+    const integrationCompanyScope = getIntegrationCompanyScope(req);
     const { from, to, range } = parseRange(req);
     const userPublicId = String(req.params.userPublicId || "").trim();
 
     const rows = await prisma.campaignUser.findMany({
       where: {
-        campaign: { tenantId },
+        campaign: {
+          tenantId,
+          integrationCompanyScope,
+        },
         sentAt: { gte: from, lt: to },
         OR: [
           { externalUserPublicId: userPublicId },

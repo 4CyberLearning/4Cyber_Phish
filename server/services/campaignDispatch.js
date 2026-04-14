@@ -19,13 +19,17 @@ function toSet(value) {
   );
 }
 
-async function buildSendPolicy(tenantId) {
+async function buildSendPolicy(tenantId, integrationCompanyScope = null) {
   const envAllowedRecipients = toSet(process.env.ALLOWED_RECIPIENTS || "");
   const envAllowedDomains = toSet(process.env.ALLOWED_RECIPIENT_DOMAINS || "");
   const envAllowedFromDomains = toSet(process.env.ALLOWED_FROM_DOMAINS || "");
 
+  const domainWhere = integrationCompanyScope
+    ? { tenantId, integrationCompanyScope }
+    : { tenantId };
+
   const dbDomains = await prisma.allowedRecipientDomain.findMany({
-    where: { tenantId, integrationCompanyScope },
+    where: domainWhere,
     select: { domain: true },
     orderBy: { createdAt: "asc" },
   });
@@ -109,8 +113,6 @@ async function ensureCampaignRunning(campaign, source = CampaignSource.SCHEDULER
 export async function sendCampaignNow(campaignId, tenantId, options = {}) {
   const source = options.source || CampaignSource.SCHEDULER;
   const actor = options.actor || { source: source === CampaignSource.SCHEDULER ? "scheduler" : "local_admin" };
-  const sendPolicy = await buildSendPolicy(tenantId);
-
   let campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, tenantId },
     include: {
@@ -125,6 +127,13 @@ export async function sendCampaignNow(campaignId, tenantId, options = {}) {
       },
     },
   });
+
+  if (!campaign) throw new Error("Campaign not found");
+
+  const sendPolicy = await buildSendPolicy(
+    tenantId,
+    campaign.integrationCompanyScope || null,
+  );
 
   if (!campaign) throw new Error("Campaign not found");
   campaign = await ensureCampaignRunning(campaign, source, actor);
