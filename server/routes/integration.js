@@ -203,6 +203,70 @@ function isUniqueConflict(err) {
   return err?.code === "P2002";
 }
 
+const DEFAULT_COMPANY_GROUP_NAME = "All";
+const DEFAULT_COMPANY_GROUP_DESCRIPTION = "Automatická skupina všech aktivních uživatelů firmy.";
+
+async function syncDefaultCompanyGroupForScope(db, tenantId, integrationCompanyScope) {
+  const group = await db.group.upsert({
+    where: {
+      tenantId_integrationCompanyScope_name: {
+        tenantId,
+        integrationCompanyScope,
+        name: DEFAULT_COMPANY_GROUP_NAME,
+      },
+    },
+    update: {
+      description: DEFAULT_COMPANY_GROUP_DESCRIPTION,
+    },
+    create: {
+      tenantId,
+      integrationCompanyScope,
+      name: DEFAULT_COMPANY_GROUP_NAME,
+      description: DEFAULT_COMPANY_GROUP_DESCRIPTION,
+    },
+    select: { id: true, name: true },
+  });
+
+  const activeUsers = await db.user.findMany({
+    where: {
+      tenantId,
+      integrationCompanyScope,
+      isActive: true,
+      externalUserPublicId: { not: null },
+    },
+    select: { id: true },
+  });
+
+  const userIds = activeUsers.map((u) => u.id);
+
+  if (userIds.length > 0) {
+    await db.groupMember.deleteMany({
+      where: {
+        groupId: group.id,
+        userId: { notIn: userIds },
+      },
+    });
+
+    await db.groupMember.createMany({
+      data: userIds.map((userId) => ({
+        groupId: group.id,
+        userId,
+      })),
+      skipDuplicates: true,
+    });
+  } else {
+    await db.groupMember.deleteMany({
+      where: { groupId: group.id },
+    });
+  }
+
+  return {
+    id: group.id,
+    name: group.name,
+    memberCount: userIds.length,
+  };
+}
+
 // GET /api/integration/recipient-domains
 router.get("/recipient-domains", async (req, res) => {
   try {
@@ -561,7 +625,7 @@ router.put("/recipients", async (req, res) => {
     deactivated = r.count;
   }
 
-  res.json({
+    res.json({
     ok: true,
     tenantId,
     integrationCompanyScope,
