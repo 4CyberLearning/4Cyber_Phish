@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: cyberphish
-    ports:
-      - "55433:5432"
     volumes:
       - postgres_phish_data_dev:/var/lib/postgresql/data
     healthcheck:

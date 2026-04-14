@@ -124,9 +124,9 @@ model SenderDomain {
 }
 
 model AllowedRecipientDomain {
-  id                      Int    @id @default(autoincrement())
-  tenantId                Int
-  tenant                  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId Int
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   integrationCompanyScope String   @default("__legacy__")
   domain                  String
@@ -134,8 +134,8 @@ model AllowedRecipientDomain {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  @@index([tenantId, integrationCompanyScope])
   @@unique([tenantId, integrationCompanyScope, domain])
+  @@index([tenantId, integrationCompanyScope])
 }
 
 /**
@@ -186,10 +186,10 @@ model Group {
   updatedAt               DateTime @default(now()) @updatedAt
 
   members    GroupMember[]
-  targetedBy Campaign[] @relation("CampaignTargetGroup")
+  targetedBy Campaign[]    @relation("CampaignTargetGroup")
 
-  @@index([tenantId, integrationCompanyScope])
   @@unique([tenantId, integrationCompanyScope, name])
+  @@index([tenantId, integrationCompanyScope])
 }
 
 model GroupMember {
@@ -310,7 +310,7 @@ model Campaign {
   tenantId Int
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  integrationCompanyScope String                     @default("__legacy__")
+  integrationCompanyScope String                       @default("__legacy__")
   name                    String
   description             String?
   scheduledAt             DateTime
@@ -318,12 +318,12 @@ model Campaign {
   startedAt               DateTime?
   finishedAt              DateTime?
   cancelledAt             DateTime?
-  status                  CampaignStatus            @default(SCHEDULED)
-  source                  CampaignSource            @default(UNKNOWN)
-  targetType              CampaignTargetType        @default(GROUP)
+  status                  CampaignStatus               @default(SCHEDULED)
+  source                  CampaignSource               @default(UNKNOWN)
+  targetType              CampaignTargetType           @default(GROUP)
   postSubmitActionType    CampaignPostSubmitActionType @default(TRAINING_PAGE)
   postSubmitRedirectUrl   String?
-  recipientCountSnapshot  Int                       @default(0)
+  recipientCountSnapshot  Int                          @default(0)
   statusReason            String?
   finishReason            String?
 
@@ -345,8 +345,8 @@ model Campaign {
   targetUsers     CampaignUser[]
   interactions    Interaction[]
   lifecycleEvents CampaignLifecycleEvent[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   @@index([tenantId, integrationCompanyScope, status, scheduledAt])
   @@index([tenantId, integrationCompanyScope, status, cutoffAt])
