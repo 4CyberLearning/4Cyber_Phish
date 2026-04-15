@@ -44,21 +44,23 @@ router.get("/default", (req, res) => {
     .filter(Boolean);
 
   const videoUrl = normalizeVideoUrl(
-    process.env.PHISH_TRAINING_VIDEO_URL || "/uploads/phishing-awareness.mp4"
+    process.env.PHISH_TRAINING_VIDEO_URL || "/uploads/phishing-training.mp4"
   );
 
   const listHtml = bullets
     .map((item) => `<li>${escapeHtml(item)}</li>`)
     .join("");
 
-  const videoHtml = videoUrl
-    ? `<video controls playsinline preload="metadata" style="width:100%;max-width:900px;border-radius:16px;background:#000;box-shadow:0 18px 50px rgba(0,0,0,.18);">
+const videoHtml = videoUrl
+  ? `<div class="video-frame">
+       <video controls playsinline preload="metadata" class="training-video">
          <source src="${escapeHtml(videoUrl)}" type="video/mp4">
          Váš prohlížeč nepodporuje přehrání videa.
-       </video>`
-    : `<div style="padding:18px 20px;border-radius:14px;background:#eef6ff;color:#244160;">
-         Video není zatím nakonfigurováno. Nastavte PHISH_TRAINING_VIDEO_URL.
-       </div>`;
+       </video>
+     </div>`
+  : `<div style="padding:18px 20px;border-radius:14px;background:#eef6ff;color:#244160;">
+       Video není zatím nakonfigurováno. Nastavte PHISH_TRAINING_VIDEO_URL.
+     </div>`;
 
   res.type("html").send(`<!doctype html>
 <html lang="cs">
@@ -76,15 +78,14 @@ router.get("/default", (req, res) => {
     .eyebrow { display:inline-flex; padding:8px 12px; border-radius:999px; background:#e7f5ff; color:#0b6aa8; font-size:12px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; }
     h1 { margin:16px 0 10px; font-size:clamp(28px,4vw,42px); line-height:1.08; }
     .lead { margin:0; max-width:860px; color:#334155; font-size:17px; line-height:1.6; }
-    .body { display:grid; gap:24px; grid-template-columns:minmax(0, 1.1fr) minmax(320px, .9fr); padding:24px 28px 30px; }
-    .video { display:flex; align-items:flex-start; justify-content:center; }
-    .tips { background:#f8fbff; border:1px solid rgba(15,23,42,.06); border-radius:20px; padding:22px 24px; }
-    .tips h2 { margin:0 0 12px; font-size:20px; }
-    .tips ul { margin:0; padding-left:20px; color:#334155; line-height:1.7; }
-    .tips li + li { margin-top:8px; }
-    .footer { padding:0 28px 28px; color:#64748b; font-size:14px; }
+    .body { display:grid; gap:28px; grid-template-columns:minmax(0, 1.55fr) minmax(300px, .65fr); padding:24px 28px 30px; align-items:start; }
+    .video { display:block; }
+    .video-frame { width:100%; border-radius:22px; overflow:hidden; background:#000; box-shadow:0 24px 70px rgba(0,0,0,.22); }
+    .training-video { display:block; width:100%; aspect-ratio:16 / 9; background:#000; }
+    .tips { background:#f8fbff; border:1px solid rgba(15,23,42,.06); border-radius:20px; padding:22px 24px; position:sticky; top:20px; }
     @media (max-width: 900px) {
       .body { grid-template-columns:1fr; }
+      .tips { position:static; }
     }
   </style>
 </head>
